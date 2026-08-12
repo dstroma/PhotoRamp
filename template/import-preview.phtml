@@ -1,0 +1,98 @@
+[% WRAPPER 'wrapper.phtml' title='PhotoRamp' h1='Import Photos' %]
+
+<div class="main-area">
+	Found [% remote_files_count %] images on memory card.<br>
+	Of these, [% remote_files_not_on_local.size %] are new and have not yet been imported.<br>
+
+	[% UNLESS remote_files_not_on_local.size == 0 %]
+	<hr class="hr1">
+
+	<form id="what-to-import" method="post" action="/import-submit">
+	<div class="gallery">
+	[% FOREACH file IN remote_files_not_on_local %]
+		[% IF loop.index % 4 == 0 %]
+		[% UNLESS loop.first %]</div>[% END %]
+		<div class="row">
+		[% END %]
+					<div class="box">
+						<div class="image">
+							[% IF file_is_image(file) %]
+							<a class="ajaxAction" href="/user-open/[% encode_u64(file) %]">
+								<img src="/user-file/[% encode_u64(file) %]">
+							</a>
+							[% ELSIF file_is_video(file) %]
+							<a class="ajaxAction" href="/user-open/[% encode_u64(file) %]">
+								<img src="/icons/icon-filetypevideo-128px.png" width="128" height="128">
+							</a>
+							[% ELSE %]
+							<a class="ajaxAction" href="/user-open/[% encode_u64(file) %]">
+								<img src="/icons/icon-filetypeunknown-128px.png" width="128" height="128">
+							</a>
+							[% END %]
+						</div>
+						<div class="actions">
+							<label><input type="checkbox" id="checkImport-[% encode_u64(file) %]" name="import-[% encode_u64(file) %]" value="import">Import</label>
+							<label><input type="checkbox" id="checkDelete-[% encode_u64(file) %]" name="delete-[% encode_u64(file) %]" value="delete">Delete</label>
+						</div>
+					</div>
+	[% END %]
+		</div>
+	</div>
+	</form>
+
+	<script type="text/javascript">
+		function promptContinue () {
+			// Count imports
+			var toCopy = 0;
+			var toMove = 0;
+			var toLose = 0;
+
+			fileList.forEach(function(element){
+				console.log(element);
+				if ($('#checkImport-' + element).prop("checked") && $('#checkDelete-' + element).prop("checked"))
+					toMove++;
+				else if ($('#checkImport-' + element).prop("checked") && !$('#checkDelete-' + element).prop("checked"))
+					toCopy++;
+				else if (!$('#checkImport-' + element).prop("checked") && $('#checkDelete-' + element).prop("checked"))
+					toLose++;
+			});
+
+			if (toCopy + toMove + toLose == 0) {
+				dmsDialog.alert("No files selected.");
+				return false;
+			}
+
+			var message = [];
+			if (toCopy > 0)
+				message.push(toCopy + ' files will be copied to computer');
+			if (toMove > 0)
+				message.push(toMove + ' files will be moved to computer');
+			if (toLose > 0)
+				message.push(toLose + ' files will be totally DELETED.')
+
+			message.push('<b>Continue?</b>');
+
+			// Show confirm dialog
+			dmsDialog.confirm(message, function(OK){
+				if (!OK)
+					return false;
+				$('form#what-to-import').submit();
+			});
+		};
+
+		var fileList = [
+			[% FOREACH file IN remote_files_not_on_local %]'[% encode_u64(file) %]'[% UNLESS loop.last %],[% END %]
+			[% END %]
+		];
+	</script>
+
+	<div class="action-button">
+		<button onclick="promptContinue();">Proceed &gt;</button>
+	</div>
+	[% END # UNLESS remote_files_not_on_local.size == 0 %]
+
+	<hr class="hr1">
+	<button onclick="goto('/')">&lt; Main Menu</button>
+</div>
+
+[% END %]

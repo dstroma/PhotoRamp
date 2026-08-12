@@ -1,0 +1,170 @@
+[% WRAPPER 'wrapper.phtml' title='PhotoRamp' h1='Fix Timestamps' %]
+
+<div class="main-area">
+	<p>Found [% remote_files_count %] images on memory card.</p>
+
+	[% IF changes_saved OR 1 %]
+	<p>Your changes have been saved. Please review if any additional changes are necessary.</p>
+	[% END %]
+
+	[% UNLESS remote_files_count == 0 %]
+
+	<form id="form-sort_by" style="padding: 1em;" method="get">
+		Sort by:
+		<select id="select-sort_by" name="sort_by">
+			<option [% IF REQUEST.param("sort_by") == 'filename'       %]selected="selected" [% END %]value="filename">Filename</option>
+			<option [% IF REQUEST.param("sort_by") == 'exif_timestamp' %]selected="selected" [% END %]value="exif_timestamp">Image Time</option>
+			<option [% IF REQUEST.param("sort_by") == 'file_timestamp' %]selected="selected" [% END %]value="file_timestamp">File Time</option>
+		</select>
+		<br>
+		<!--
+		<button id="button-manual-sort" style="margin-top:0.5em;">Enable Manual Sorting</button>
+		-->
+	</form>
+
+	<hr class="hr1">
+
+	<script type="text/javascript">
+		$('select#select-sort_by').change(function(){
+			$('form#form-sort_by').submit();
+		});
+		var fileList = [
+			[%- FOREACH file IN remote_files_with_details %]
+				'[% file.u64_filename %]'[% UNLESS loop.last; ','; END %]
+			[%- END %]
+		];
+
+		$().ready(function(){
+			// SHIFT datetimes
+			$('button.adj-allbelow').on('click', function(){
+				var idx = $(this).attr('data-file-idx');
+				var newDate = $('#input-date-'+idx).prop('value');
+				var newTime = $('#input-time-'+idx).prop('value');
+
+				$.post(
+					'/fix-timestamps/get-shifted-times',
+					{
+						filename:  fileList[idx],
+						file_idx:  idx,
+						new_date:  newDate,
+						new_time:  newTime,
+						file_list: fileList.join(',')
+					},
+					function(gotData){
+						if (gotData.new_timestamps && gotData.new_timestamps.length > 0) {
+							gotData.new_timestamps.forEach(function(elt){
+								$('#input-date-'+elt.idx).prop('value', elt.new_date);
+								$('#input-time-'+elt.idx).prop('value', elt.new_time);
+							});
+						} else if (gotData.error_message) {
+							dmsDialog.alert(gotData.error_message);
+						}
+					}
+				);
+			});
+
+			// SET datetimes
+			$('button.set-allbelow').on('click', function(){
+				var idx = $(this).attr('data-file-idx');
+				var newDate = $('#input-date-'+idx).prop('value');
+				var newTime = $('#input-time-'+idx).prop('value');
+				for (var i = idx; i < fileList.length; i++) {
+					if (i > idx) {
+						$('#input-date-'+i).prop('value', newDate);
+						$('#input-time-'+i).prop('value', newTime);
+					}
+				}
+			});
+
+			// UNSET datetimes
+			$('button.uns-allbelow').on('click', function(){
+				var idx = $(this).attr('data-file-idx');
+				for (var i = idx; i < fileList.length; i++) {
+					if (i > idx) {
+						$('#input-date-'+i).prop('value', '');
+						$('#input-time-'+i).prop('value', '');
+					}
+				}
+				return false;
+			});
+		});
+	</script>
+
+	<style type="text/css">
+		div.timestamps span.label { display: inline-block; width: 7em; }
+		div.timestamps span.field { display: inline-block; }
+
+		div.for-image-file {
+			clear: both; padding: 2em; max-width: 720px; margin-left:auto; margin-right:auto;
+		}
+		div.for-image-file div.image {
+			border: 2px solid #333; margin:0;padding:0; width: 300px; float:left; height:12em;
+		}
+		div.for-image-file div.options.outer {
+			border: 2px solid #333; float: left; margin:0;padding:0; text-align: left; height:12em;
+			border-left: 0;
+		}
+		div.for-image-file div.options.inner {
+			padding: 0.75em;
+		}
+		div.for-image-file div.set-new-timestamp {
+			padding-top: 1em;
+		}
+		div.for-image-file div.buttons {
+			padding-top: 1em;
+		}
+		input[type=date] {
+			width: 9em;
+		}
+	</style>
+
+	 <!-- id="what-to-import" method="post" action="/import-submit" -->
+	<div class="gallery">
+	[% FOREACH file IN remote_files_with_details %]
+		<div id="div-for-image-[% encode_u64('file.filename') %]" class="for-image-file">
+			<div class="image">
+				<img xwidth="256" style="max-width: 256px; max-height: 12em;" src="/user-file/[% encode_u64(file.filename) %]">
+			</div>
+			<div class="options outer">
+				<div class="options inner">
+					<div class="filename" style="margin-bottom: 0.5em;">[% file.shortname %]</div>
+					<div class="timestamps">
+					<!--
+						<span class="label">Image time:</span><span>[% file.exif_timestamp OR 'N/A' %]</span><br>
+						<span class="label">File time: </span><span>[% file.fsys_timestamp %]</span><br>
+					-->
+						Timestamp:<br>
+						<input type="date" disabled="disabled" value="[% file.first_timestamp_dto.ymd() %]">
+						at
+						<input type="time" disabled="disabled" value="[% file.first_timestamp_dto.hms().substr(0,5) %]">
+					</div>
+					<div class="buttons">
+						New Timestamp?<br>
+						<input type="date" id="input-date-[% loop.index %]" name="date-[% encode_u64('file.filename') %]">
+						at
+						<input type="time" id="input-time-[% loop.index %]" name="time-[% encode_u64('file.filename') %]">
+					</div>
+					<div class="buttons">
+						<button class="set-allbelow" data-file-idx="[% loop.index %]">SET all Below</button>
+						<button class="adj-allbelow" data-file-idx="[% loop.index %]">SHIFT all Below</button>
+						<button class="uns-allbelow" data-file-idx="[% loop.index %]">UNset all Below</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	[% END %]
+	</div>
+	</form>
+
+	<div style="clear:both;"></div>
+
+	<div class="action-button">
+		<button onclick="promptContinue();">Proceed &gt;</button>
+	</div>
+	[% END # UNLESS %]
+
+	<hr class="hr1">
+	<button onclick="goto('/')">&lt; Main Menu</button>
+</div>
+
+[% END %]

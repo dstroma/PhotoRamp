@@ -1,0 +1,27 @@
+[% WRAPPER 'wrapper.phtml' title='PhotoRamp' h1='Memory Card Cleanup' %]
+
+<div class="main-area">
+	<p>
+		Found [% remote_files_count %] images on memory card.<br>
+		Of these, [% remote_files_on_local.size %] have already been copied to your computer.<br>
+		[% IF remote_files_on_local.size > 0 %]These [% remote_files_on_local.size %] can be safely removed from the memory card.[% END %]
+	</p>
+
+	[% UNLESS remote_files_on_local.size == 0 %]
+	<form action="/cleanup-submit" method="post">
+		<input type="hidden" name="count_to_cleanup" value="[% remote_files_on_local.size %]">
+		[% FOR file IN remote_files_on_local %]
+			<input type="hidden" name="cleanup-[% encode_u64(file) %]" value="1">
+		[% END %]
+	<p>Proceed with memory card cleanup?</p>
+	<div class="action-button">
+		<input type="submit" value="Proceed &gt;">
+	</div>
+	[% END # UNLESS %]
+	</form>
+
+	<hr class="hr1">
+	<button onclick="goto('/')">&lt; Main Menu</button>
+</div>
+
+[% END %]

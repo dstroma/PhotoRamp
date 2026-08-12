@@ -1,0 +1,62 @@
+div#dmsDialog {
+	display: none;
+}
+div.dmsDialog div.overlay {
+	z-index: 99;
+	position: fixed;
+	left: 0px;
+	top:  0px;
+	width: 100%;
+	height: 100%;
+	background-color: #333;
+	opacity: 0.75;
+}
+div.dmsDialog div.dialog {
+	z-index: 100;
+	position: fixed;
+
+	top:   40%;
+	width: 20em;
+	left:  50%;
+	margin-left: -10em;
+
+	background: #eee;
+	border: 1px solid #999;
+	border-radius: 5px;
+	padding: 1em;
+
+	font-size: 15px;
+}
+div.dmsDialog div.dialog div.buttons {
+	text-align: right;
+}
+div.dmsDialog div.dialog button {
+	background-color: #ddd;
+	border: 1px solid #ccc;
+	border-radius: 4px;
+	font-size: 13px;
+	font-weight: 600;
+	padding: 8px 12px;
+	margin:  2px;
+}
+div.dmsDialog div.dialog button.ok {
+	background-color: #27f;
+	border-color: #16e;
+	color: #eee;
+}
+div.dmsDialog div.dialog button.ok:hover {
+	border-color: #04c;
+	background-color: #16e;
+}
+div.dmsDialog div.dialog button.ok:active {
+	border-color: #03b;
+	background-color: #05d;
+}
+div.dmsDialog div.dialog button.cancel:hover {
+	border-color: #aaa;
+	background-color: #ccc;
+}
+div.dmsDialog div.dialog button.cancel:active {
+	border-color: #999;
+	background-color: #bbb;
+}
