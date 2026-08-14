@@ -1,31 +1,51 @@
 use v5.34;
-use experimental 'signatures';
 package App::PhotoRamp 0.01 {
+  use App::PhotoRamp::Journal;
+  use App::PhotoRamp::Signatures;
+
+  use DateTime ();
+  use Image::ExifTool ();
+  use File::Copy ();
   use File::Find::Rule;
-  use File::Spec;
-  use File::Temp;
+  use File::Spec;  # for paths
+  use File::Temp;  # for tempfiles
   use Digest::MD5;
   use DBI;
   use DBD::SQLite;
   use JSON::MaybeXS;
   use Fcntl ':seek';
   use autodie;
+  use constant WINDOWS_OS => (eval "use Win32; 1" ? 1 : 0);
 
-  use constant WINDOWS_OS =>
-    (eval "use Win32; 1" ? 1 : 0);
-
-  use constant FILE_EXTENSIONS =>
-    'jpg|jpeg|tiff|tif|raw|gif|png|psd|heif|heic|webp|bmp|svg|eps|ai|avi|mp4|mpg|mov|mkv|wmv|webm|flv|3gp';
-
-  my $FILE_EXTENSIONS    = FILE_EXTENSIONS;
-  my $username           = get_username();
-  my $remote_photos_dir;
-  my $local_photos_dir   = get_user_pictures_dir();
-  my $temp_dir           = File::Temp->newdir();
+  our $APP_NAME             = 'PhotoRamp';
+  our $FILE_EXTENSION_REGEX = join '|', media_file_extensions();
+  our $username             = get_username();
+  our $remote_photos_dir;
+  our $local_photos_dir     = get_user_pictures_dir();
+  my  $journal_file         = get_user_journal_filename();
+  my  $dbh;
+  my  $exifTool             = Image::ExifTool->new;
+  my  $temp_dir             = File::Temp->newdir();
+  my  $journal              = App::PhotoRamp::Journal->new_or_open($journal_file);
 
   setup_db();
 
   #####################################################################
+
+  sub media_file_extensions () {
+    state @extensions;
+
+    unless (@extensions) {
+      require Plack::MIME;
+      my $typemap = $Plack::MIME::MIME_TYPES;
+      @extensions =
+        map  { substr($_, 1) }
+        grep { $typemap->{$_} =~ m/^(?:image|video|audio)/ }
+        keys %$typemap;
+    }
+
+    return @extensions;
+  }
 
   sub get_username {
     eval { getlogin() } // eval { scalar getpwuid($<) } // $ENV{LOGNAME} // $ENV{USER} // undef;
@@ -40,18 +60,46 @@ package App::PhotoRamp 0.01 {
       return $dir if $username and -d ($dir = "C:\Documents and Settings\$username\My Pictures");
       return $dir if $username and -d ($dir = "C:\Documents\$username\My Pictures");
       return $dir if -d ($dir = "C:\My Documents\My Pictures");
-
       die "Unable to determine My Pictures directory (Windows).\n";
+    } else {
+      return $dir if defined $ENV{HOME} and -d ($dir = "$ENV{HOME}/Pictures");
+      return $dir if defined $ENV{HOME} and -d ($dir = "$ENV{HOME}/pictures");
+      return $dir if $username and -d ($dir = "/home/$username/Pictures");
+      return $dir if $username and -d ($dir = "/home/$username/pictures");
+      return $dir if $username and -d ($dir = "/Users/$username/Pictures");
+      return $dir if $username and -d ($dir = "/Users/$username/pictures");
+      die "Unable to determine My Pictures directory (non-Windows).\n";
     }
+  }
 
-    return $dir if defined $ENV{HOME} and -d ($dir = "$ENV{HOME}/Pictures");
-    return $dir if defined $ENV{HOME} and -d ($dir = "$ENV{HOME}/pictures");
-    return $dir if $username and -d ($dir = "/home/$username/Pictures");
-    return $dir if $username and -d ($dir = "/home/$username/pictures");
-    return $dir if $username and -d ($dir = "/Users/$username/Pictures");
-    return $dir if $username and -d ($dir = "/Users/$username/pictures");
+  sub get_user_journal_dir {
+    my $parent_dir = eval {
+      my $dir;
+      if (WINDOWS_OS) {
+        return $dir if defined ($dir = Win32::GetFolderPath(Win32::CSIDL_APPDATA));
+        return $dir if $username and -d ($dir = "C:\Documents and Settings\$username\Application Data");
+        return $dir if $username and -d ($dir = "C:\Documents\$username\Application Data");
+        return $dir if -d ($dir = 'C:\\');
+        die "Unable to determine application data directory (Windows).\n";
+      } else {
+        return $dir if defined $ENV{HOME} and -d ($dir = $ENV{HOME});
+        return $dir if defined $username and -d ($dir = "/home/$username");
+        return $dir if defined $username and -d ($dir = "/Users/$username");
+        die "Unable to determine user home directory (non-Windows).\n";
+      }
+    } or die $@;
 
-    die "Unable to determine My Pictures directory (non-Windows).\n";
+    my $dir = WINDOWS_OS ?
+      catfile($parent_dir, 'PhotoRamp')  :
+      catfile($parent_dir, '.photoramp') ;
+
+    mkdir $dir unless -e $dir;
+    return $dir;
+  }
+
+  sub get_user_journal_filename {
+    my $version = eval { $App::PhotoRamp::Journal::DB_VERSION } // 0;
+    catfile(get_user_journal_dir(), "journal-$version.db");
   }
 
   sub debug_local_photos_dir {
@@ -69,22 +117,11 @@ package App::PhotoRamp 0.01 {
   sub set_local_photos_dir  ($newdir) { $local_photos_dir  = $newdir; }
   sub set_remote_photos_dir ($newdir) { $remote_photos_dir = $newdir; }
   sub get_last_char                   { substr($_[0], -1, 1) }
-  sub my_unlink ($filename) {
-    warn "Deleting $filename";
-    unlink $filename;
-  }
 
-  sub oldest_time ($file) {
-    my @stat = stat($file);
-    @stat = sort { $a <=> $b } @stat[8,9,10]; #8-atime, 9-mtime, 10-ctime
-    my $oldest_time = $stat[0];
-  }
-
-  my $dbh;
   sub setup_db {
     return if $dbh;
 
-    my $dbfile = catfile($temp_dir, 'photoramp.db');
+    my $dbfile = catfile($temp_dir, 'photoramp-work.db');
     warn "Database file will be located at $dbfile";
     rename($dbfile => "$dbfile.old") if -e $dbfile;
     $dbh = DBI->connect("dbi:SQLite:dbname=$dbfile",'','');
@@ -180,31 +217,6 @@ package App::PhotoRamp 0.01 {
     return 1;
   }
 
-  sub copy_file ($file1, $file2) {
-    # Check files
-    unless (-e $file1) {
-      die "Origin file does not exist";
-    }
-    if (-e $file2) {
-      die "Destination file already exists";
-    }
-
-    my $buf1;
-    open my $fh1, '<', $file1;
-    open my $fh2, '>', $file2;
-    binmode $fh1;
-    binmode $fh2;
-    while (read($fh1, $buf1, 1024)) {
-      print $fh2 $buf1;
-    }
-    close $fh1;
-    close $fh2;
-
-    my $oldest_time = oldest_time($file1);
-    utime $oldest_time, $oldest_time, $file2;
-    return 1;
-  }
-
   sub index_files ($where, $callback = undef) {
     my $dir;
     if ($where eq 'remote') {
@@ -224,7 +236,7 @@ package App::PhotoRamp 0.01 {
     my @files = File::Find::Rule
       ->file
       ->nonempty
-      ->name(qr/^[^\.].+\.($FILE_EXTENSIONS)$/i)
+      ->name(qr/^[^\.].+\.($FILE_EXTENSION_REGEX)$/i)
       ->in($dir);
 
     my $count = scalar @files;
@@ -265,9 +277,9 @@ package App::PhotoRamp 0.01 {
     binmode $fh;
     my $buf;
 
-    # Take 16 samples of 16KB each
-    my $num_of_samples = 16;
-    my $sample_size    = 16 * 1024;
+    # Take 8 samples of 8KB each
+    my $num_of_samples = 8;
+    my $sample_size    = 8 * 1024;
     my $file_size      = -s $filename;
     my $step_size      = int $file_size / $num_of_samples;
     $step_size = 0 if $file_size <= $num_of_samples*$sample_size;
@@ -282,6 +294,17 @@ package App::PhotoRamp 0.01 {
 
   sub find_dcims {
     return ($remote_photos_dir) if $remote_photos_dir;
+
+    # Allow manual path specification on command line
+    if (@ARGV) {
+      my @manual_paths = map { $_ =~ m/^[-]{0,2}DCIM_PATH=(.+)$/i ? $1 : () } @ARGV;
+      if (@manual_paths) {
+        warn "Using manual DCIM path(s)!";
+        return @manual_paths;
+      }
+    }
+
+    # Auto detect paths
     my $base;
     if (-d '/Volumes') {
       $base = '/Volumes';
@@ -294,6 +317,7 @@ package App::PhotoRamp 0.01 {
       return;
     }
     my @dirs = File::Find::Rule->directory->name('DCIM')->maxdepth(3)->in($base);
+    warn "DEBUG: " . join ",", @dirs;
     return @dirs;
   }
 
@@ -340,11 +364,9 @@ package App::PhotoRamp 0.01 {
   }
 
   sub remote_files {
-    my $sth = $dbh->prepare(
-      'SELECT filename FROM remote_photos ORDER BY filename ASC'
-    );
+    my $sth = $dbh->prepare('SELECT filename FROM remote_photos ORDER BY filename ASC');
     $sth->execute;
-    my @files = ();
+    my @files;
     while (my @row = $sth->fetchrow_array) {
       push @files, $row[0];
     }
@@ -428,36 +450,12 @@ package App::PhotoRamp 0.01 {
     return @filename_list;
   }
 
-  sub copy_new_remote_photos_to_local (%params) {
-    my $path   = $params{'path'};
-    my $rename = $params{'rename'};
-    my $delete = $params{'delete'};
+  sub delete_file ($filename, $reason = undef) {
+    my $log_id = $journal->log_action($filename, undef, action => 'DELETE', reason => $reason);
 
-    if ($delete) {
-      die 'invalid delete param' unless $delete eq 'delete' or $delete eq 'trash';
-    }
-
-    my @new_files = remote_files_not_on_local();
-
-    foreach my $file (@new_files) {
-      my $new_file = undef;
-
-      # copy
-      copy_file($file, $new_file)
-        or die 'Cannot copy file!';
-
-      # Verify
-      verify_identical($file, $new_file)
-        or die 'Cannot verify file!';
-
-      # delete?
-    }
-  }
-
-  sub delete_file (%params) {
-    my $filename = $params{'filename'};
-    my $ok = my_unlink($filename);
-    return $ok;
+    unlink $filename or die "Cannot delete $filename: $!";
+    $journal->set_action_status($log_id, success => 1);
+    return 1;
   }
 
   sub import_file ($from, $to = undef) {
@@ -472,37 +470,34 @@ package App::PhotoRamp 0.01 {
     die "File $to already exists!"
       if -e $to;
 
-    # Copy and verify
-    copy_file($from => $to);
-    die "File became corrupted during copy"
-      unless md5_file($from) eq md5_file($to);
+    # Copy and verify. File::Copy returns 1 on success 0 on fail
+    File::Copy::copy($from, $to) or die "Unable to copy file: $!";
+    my $log_id = $journal->log_action($from, $to, action => 'COPY', reason => 'IMPORT');
 
-    1;
+    verify_files_identical($from, $to)
+      or die "File became corrupted during copy";
+
+    $journal->set_action_status($log_id, success => 1);
+    return 1;
   }
 
   sub new_filename_for_file ($existing, $dest_dir, $make_dir = 1) {
     # Clean
     chop $dest_dir if get_last_char($dest_dir) eq '/';
 
-    # Get file time
-    # Note the camera does not store time zone, so use gmtime() not localtime()
-    my $otime = oldest_time($existing);
-    my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = gmtime($otime);
-
-    # Fix numbers/zero pad
-    $mon++;
-    $year+= 1900;
-    ($mon, $mday, $hour, $min) = map { sprintf('%02d', $_) } ($mon, $mday, $hour, $min);
+    # Get datetime
+    my $dt = exif_datetime_for_file($existing);
+    my ($YYYY, $MM, $DD, $hh, $mm) = map { $dt->$_ } qw(year month day hour minute);
 
     # Extension
     my ($extension) = $existing =~ m/\.(.+)$/;
     $extension //= '';
 
     # Subdir
-    my $sub_dir = $year;
+    my $sub_dir = $YYYY;
 
     # Base name
-    my $base_name = "$year$mon$mday\_$hour$min";
+    my $base_name = "$YYYY$MM$DD" . '_' . "$hh$mm";
     my $fq_filename;
 
     my $i = 0;
@@ -518,16 +513,12 @@ package App::PhotoRamp 0.01 {
   }
 
   sub exif_datetime_for_file ($filename) {
-    require Image::ExifTool;
-    require DateTime;
-    state $exifTool = Image::ExifTool->new;
-
     my $info = $exifTool->ImageInfo($filename);
     my %info = %$info;
     my @alldates  =
       sort { $a cmp $b }
-      grep { defined $_ }
-      @info{qw/DateTimeOriginal DateTime DateTimeDigitized CreateDate FileInodeChangeDate FileModifyDate/};
+      grep { defined($_) and $_ =~ m/^\d\d\d\d/ }
+      @info{qw/DateTimeOriginal DateTime CreateDate DateTimeDigitized FileInodeChangeDate FileModifyDate/};
 
     my $date = $alldates[0];
     return undef unless $date and length $date > 8;
@@ -536,14 +527,10 @@ package App::PhotoRamp 0.01 {
     return DateTime->new(year => $Y, month => $M, day => $D, hour => $h, minute => $m, second => $s);
   }
 
-  sub file_mime_type ($filename) {
-    my ($ext)     = $filename =~ m/(\.[^\.]+)$/;
-    my $mime_type = Plack::MIME->mime_type(lc $ext);
-  }
-
-  sub file_is_image ($fn) { file_mime_type($fn) =~ m/^image/; }
-  sub file_is_video ($fn) { file_mime_type($fn) =~ m/^video/; }
-  sub file_is_audio ($fn) { file_mime_type($fn) =~ m/^audio/; }
+  sub file_mime_type ($fn) { Plack::MIME->mime_type($fn);      }
+  sub file_is_image  ($fn) { file_mime_type($fn) =~ m/^image/; }
+  sub file_is_video  ($fn) { file_mime_type($fn) =~ m/^video/; }
+  sub file_is_audio  ($fn) { file_mime_type($fn) =~ m/^audio/; }
 }
 
 1;
@@ -554,7 +541,7 @@ __END__
 
 =head1 NAME
 
-App::PhotoRamp - It's new $module
+App::PhotoRamp - Digital camera image import helper tool
 
 =head1 SYNOPSIS
 
@@ -562,7 +549,7 @@ App::PhotoRamp - It's new $module
 
 =head1 DESCRIPTION
 
-App::PhotoRamp is ...
+See App::PhotoRamp::CLI, App::PhotoRamp::GUI, and App::PhotoRamp::WebGUI
 
 =head1 LICENSE
 
@@ -576,4 +563,3 @@ it under the same terms as Perl itself.
 Dondi Michael Stroma E<lt>dstroma@gmail.comE<gt>
 
 =cut
-

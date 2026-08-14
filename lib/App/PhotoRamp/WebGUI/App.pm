@@ -29,12 +29,21 @@ package App::PhotoRamp::WebGUI::App {
   *App::PhotoRamp::WebGUI::App::Template::set_defaults = sub ($self) {
     $self->set(
       encode_u64    => \&encode_u64,
+      server_pid    => $$,
       file_is_image => \&App::PhotoRamp::file_is_image,
       file_is_video => \&App::PhotoRamp::file_is_video,
       file_is_audio => \&App::PhotoRamp::file_is_audio,
     );
     $self;
   };
+
+  sub app_with_static_server {
+    App::PhotoRamp::WebGUI::App->app(
+      serve_static_files => 1,
+      static_docroot     => "$ENV{PHOTORAMP_BASEDIR}/static",
+    );
+  }
+
 
   #############################################################################
   # Only routes below
@@ -45,9 +54,16 @@ package App::PhotoRamp::WebGUI::App {
   };
 
 
-  route '/get-messages' => sub ($request, $response) {
+  route '/get-messages/server-{server_pid}' => sub ($request, $response) {
+    my $rpid = $request->route_param('server_pid');
+    unless ($rpid eq $$) {
+      $response->status(500);
+      $response->body('Error');
+      return $response;
+    }
+
     my @messages = App::PhotoRamp::get_ipc_messages();
-    return $response->render_json({ messages => \@messages });
+    return $response->render_json({ messages => \@messages, server_pid => $$ });
   };
 
 
@@ -174,6 +190,7 @@ package App::PhotoRamp::WebGUI::App {
     return $response->render_template('work.phtml');
   };
 
+
   route '/import-preview' => sub ($request, $response) {
     my $remote_files_count        = App::PhotoRamp::remote_files_count();
     my @remote_files_not_on_local = App::PhotoRamp::remote_files_not_on_local();
@@ -194,11 +211,12 @@ package App::PhotoRamp::WebGUI::App {
     my @delete_list = ();
     foreach my $key (keys %$parameters) {
       if ($key =~ m/^(import|delete)-(.+)$/) {
-        my $filename_b64 = $2;
-        push @import_list, decode_u64($filename_b64)
-          if $request->param($key) eq 'import';
-        push @delete_list, decode_u64($key)
-          if $request->param($key) eq 'delete';
+        my $action    = $1;
+        my $fname_b64 = $2;
+        push @import_list, decode_u64($fname_b64)
+          if $action eq 'import' and $request->param($key) eq 'import';
+        push @delete_list, decode_u64($fname_b64)
+          if $action eq 'delete' and $request->param($key) eq 'delete';
       }
     }
 
@@ -289,6 +307,14 @@ package App::PhotoRamp::WebGUI::App {
 
     # Calculate delta
     my $delta = $dt_new->epoch - $dt_org->epoch;
+    #my $delta_human = {};
+    #$delta_human->{years} = int($delta  / (60*60*24*365.25));
+    #$delta_human->{days}  = int(($delta - ($delta_human->{years}*60*60*24*365.25)) / (60*60*24));
+    #$delta_human->{hours} = int(($delta - ($delta_human->{years}*60*60*24*365.25)  - ($delta_human->{days}*60*60*24)) / (60*60));
+    #$delta_human->{summary} = ''
+    #  . ($delta_human->{years} ? " $delta_human->{years} years" : '')
+    #  . ($delta_human->{days}  ? " $delta_human->{days} days"   : '')
+    #  . ($delta_human->{hours} ? " $delta_human->{hours} hours" : '');
 
     # Create a data structure with new timestamps
     # Start at idx+1
@@ -299,7 +325,7 @@ package App::PhotoRamp::WebGUI::App {
       push @data_out, { idx => $i, new_date => $dt->ymd, new_time => substr($dt->hms, 0, 5) };
     }
 
-    return $response->render_json({ new_timestamps => \@data_out });
+    return $response->render_json({ new_timestamps => \@data_out, delta => $delta }); # , delta_human => $delta_human });
   };
 
 
@@ -334,8 +360,4 @@ package App::PhotoRamp::WebGUI::App {
   };
 }
 
-# return true
-App::PhotoRamp::WebGUI::App->app(
-  serve_static_files => 1,
-  static_docroot     => "$ENV{PHOTORAMP_BASEDIR}/static",
-);
+1;

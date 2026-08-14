@@ -16,29 +16,15 @@
                 window.location = loc;
             }
 
-            /* health check */
-            /*
-            var checkAliveInterval = setInterval(checkAlive, 1500);
-            function checkAlive(){
-                $.ajax({
-                    url: '/check-alive',
-                    timeout: 1400,
-                    error: function(){
-                        clearInterval(checkAliveInterval);
-                        $('h1').html("Error");
-                        $('div#main-content').hide();
-                        $('div#crash-notice').show();
-                    }
-                })
-            }
-            */
-
+            var checkInterval_ms = [% check_interval OR '1000' %]
+            var serverPid = '[% server_pid %]';
             var messages = [];
-            var checkMessagesInterval = setInterval(checkMessages, 3000);
+            var checkMessagesInterval = setInterval(checkMessages, checkInterval_ms);
+            var attemptedErrorRecovery = false;
             function checkMessages(){
                 $.ajax({
-                    url: '/get-messages',
-                    timeout: 3000,
+                    url: '/get-messages/server-' + serverPid,
+                    timeout: checkInterval_ms,
                     success: function(data, textStatus, jqXHR) {
                         //console.log("Got data!");
                         //console.log(data);
@@ -57,12 +43,26 @@
                     },
                     error: function(){
                         clearInterval(checkMessagesInterval);
-                        $('h1').html("Error");
-                        $('div#main-content').hide();
-                        $('div#crash-notice').show();
+                        if (attemptedErrorRecovery) {
+                            dmsDialog.pressCx();
+                            $('h1').html("Error");
+                            $('div#main-content').hide();
+                            $('div#crash-notice').show();
+                        } else {
+                            startErrorRecovery();
+                        }
                     }
                 })
             }
+
+            function startErrorRecovery(){
+                dmsDialog.wait(["An error has occurred.", "Retrying..."]);
+                setTimeout(function(){
+                    attemptedErrorRecovery = true;
+                    checkMessagesInterval = setInterval(checkMessages, checkInterval_ms);
+                    checkMessages();
+                }, 9000);
+            };
 
             $().ready(function(){
                 $('a.ajaxAction').on('click', function(){

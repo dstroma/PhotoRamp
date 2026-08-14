@@ -11,7 +11,7 @@ el: function(n) {
 	return el;
 },
 
-di: function(cont,cancBtn,cb) {
+di: function(cont,btns,cb) {
 	this.cb = cb;
 
 	// add <p> tags
@@ -20,7 +20,8 @@ di: function(cont,cancBtn,cb) {
 	cont.forEach((e) => {cont2 = cont2 + '<p>' + e + '</p>'});
 
 	this.el('Content').innerHTML = cont2;
-	this.el('ButtonCancel').style.display = cancBtn ? 'inline' : 'none';
+	this.el('ButtonCancel').style.display = btns.cancel ? 'inline' : 'none';
+	this.el('ButtonOK').style.display = btns.ok ? 'inline' : 'none';
 	this.el().style.display = 'block';
 },
 
@@ -34,9 +35,9 @@ pressCx: function(){
 	if (this.cb) this.cb(false);
 },
 
-alert: function(cont) { this.di(cont, false, null); },
-
-confirm: function(cont,fn){ this.di(cont, true, fn); },
+alert:   function(cont)   { this.di(cont, { ok: true }, null); },
+confirm: function(cont,fn){ this.di(cont, { ok: true, cancel: true }, fn); },
+wait:    function(cont)   { this.di(cont, {}, null); },
 
 setup: function() {
 	var div = document.createElement("div");

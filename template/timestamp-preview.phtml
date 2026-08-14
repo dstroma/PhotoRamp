@@ -56,6 +56,16 @@
 								$('#input-date-'+elt.idx).prop('value', elt.new_date);
 								$('#input-time-'+elt.idx).prop('value', elt.new_time);
 							});
+
+							if (gotData.delta) {
+								if (gotData.delta > 0) {
+									dmsDialog.alert(["New timestamps have been entered with a backward shift relative to their previous timestamps.",
+													"Please check the results and make manual adjustments if necessary."]); // by approximately " + gotData.delta_human.summary + ". (Leap year math may affect this summary.)");
+								} else if (gotData.delta < 0) {
+									dmsDialog.alert(["New timestamps have been entered with a forward shift relative to their previous timestamps.",
+													"Please check the results and make manual adjustments if necessary."]); // by approximately " + gotData.delta_human.summary+ ". (Leap year math may affect this summary.)");
+								}
+							}
 						} else if (gotData.error_message) {
 							dmsDialog.alert(gotData.error_message);
 						}
@@ -155,6 +165,16 @@
 	[% END %]
 	</div>
 	</form>
+
+	<div style="clear:both;"></div>
+
+	<div class="action-button" style="width: 40em; border: 1px solid gray; margin-left: auto; margin-right: auto; border-radius: 0.25em; padding:0.25em;">
+		<label>
+			<input type="checkbox" name="update_local_copies" value="1">
+			Also update timestamps of duplicate files that
+			have been already copied to my computer.
+		</label>
+	</div>
 
 	<div style="clear:both;"></div>
 
