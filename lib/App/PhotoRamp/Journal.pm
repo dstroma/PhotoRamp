@@ -180,7 +180,6 @@ package App::PhotoRamp::Journal {
   sub db_last_id ($self, $table, $column = 'id') {
     $self->dbh->last_insert_id(undef, undef, $table, $column);
   }
-
 }
 
 1;

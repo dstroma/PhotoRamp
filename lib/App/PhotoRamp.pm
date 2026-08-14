@@ -4,14 +4,14 @@ package App::PhotoRamp 0.01 {
   use App::PhotoRamp::Signatures;
 
   use DateTime ();
-  use Image::ExifTool ();
+  use DBI;
+  use DBD::SQLite;
+  use Digest::MD5;
   use File::Copy ();
   use File::Find::Rule;
   use File::Spec;  # for paths
   use File::Temp;  # for tempfiles
-  use Digest::MD5;
-  use DBI;
-  use DBD::SQLite;
+  use Image::ExifTool ();
   use JSON::MaybeXS;
   use Fcntl ':seek';
   use autodie;
