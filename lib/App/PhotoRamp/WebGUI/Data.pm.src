@@ -1,6 +1,66 @@
-use v5.34;
+use v5.26;
 use experimental 'signatures';
-use experimental 'try';
-package App::PhotoRamp::WebGUI::Data;
+use strict;
+use warnings;
+package App::PhotoRamp::WebGUI::Data {
+  use File::Basename qw(dirname basename);
+  use File::Spec::Functions qw(catfile);
+  use File::Path qw(make_path);
+  use MIME::Base64 qw(decode_base64);
+  use Gzip::Libdeflate;
+  use autodie;
+
+  my $gz = Gzip::Libdeflate->new;
+
+  sub trimcfln ($str) {
+    $str =~ s/[\r\n]+$//g;
+    return $str;
+  }
+
+  sub get_self_fh {
+    open my $fh, '<', __FILE__;
+    return $fh;
+  }
+
+  sub seek_end_tag ($fh) {
+    while (my $line = <$fh>) {
+      last if $line =~ m/^__END__[\r\n]+$/;
+    }
+    return $fh;
+  }
+
+  sub install ($path = "./extracted-data") {
+    my $fh = seek_end_tag(get_self_fh());
+
+    while (my $line = <$fh>) {
+      $line = trimcfln($line);
+      my $filename  = $line;
+      next unless length $filename > 1;
+
+      $line = <$fh>;
+      $line = trimcfln($line);
+      my $size      = $line;
+
+      my $filecont;
+      my $read = read $fh, $filecont, $size;
+      die "Cannot read $size bytes of data, only got $read!"
+        if $read < $size;
+
+      $filecont = $gz->decompress(decode_base64($filecont));
+      save($filecont => catfile($path, $filename));
+    }
+    close $fh;
+  }
+
+  sub save ($content, $filename) {
+    my $dir = dirname($filename);
+    make_path $dir unless -d $dir;
+
+    open my $fh, '>', $filename;
+    binmode $fh;
+    print $fh $content;
+    close $fh;
+  }
+}
 
 1;

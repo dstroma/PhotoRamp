@@ -17,7 +17,9 @@ find(sub {
 
 copy('./lib/App/PhotoRamp/WebGUI/Data.pm.src', './lib/App/PhotoRamp/WebGUI/Data.pm');
 
-open my $outfh, '>', './lib/App/PhotoRamp/WebGUI/Data.pm';
+open my $outfh, '>>', './lib/App/PhotoRamp/WebGUI/Data.pm';
+print $outfh "\r\n__END__\r\n";
+
 foreach my $filename (sort { $a cmp $b } @files) {
   # Gzip and get base56
   open my $infh, '<', $filename;

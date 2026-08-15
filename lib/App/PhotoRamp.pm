@@ -193,8 +193,7 @@ package App::PhotoRamp 0.01 {
     # Random clean up
     if (rand() < 0.11) {
       eval {
-        $sth_clean->execute($last_read_id - 1)
-          or die $sth_clean->errstr;
+        $sth_clean->execute($last_read_id - 1) or die $sth_clean->errstr;
       } or warn "DEBUG: Unable to clean up table ipc, $@";
     }
     return @messages;
@@ -203,8 +202,7 @@ package App::PhotoRamp 0.01 {
   sub put_ipc_message ($message) {
     state $sth_insert = $dbh->prepare('INSERT INTO ipc (process_id, message) VALUES (?,?)');
     $message = encode_json($message) if ref $message;
-    $sth_insert->execute($$, $message);
-    return 1;
+    return $sth_insert->execute($$, $message);
   }
 
   sub verify_files_identical ($file1, $file2) {
@@ -328,7 +326,7 @@ package App::PhotoRamp 0.01 {
     } elsif (-d '/media') {
       $base = '/media';
     } else {
-      warn "Cannot find any removable media in /Volumes or /media.";
+      warn "DEBUG: Cannot find any removable media in /Volumes or /media.";
       return;
     }
     my @dirs = File::Find::Rule->directory->name('DCIM')->maxdepth(3)->in($base);

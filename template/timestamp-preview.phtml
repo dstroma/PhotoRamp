@@ -98,6 +98,32 @@
 				return false;
 			});
 		});
+
+	function promptContinue() {
+		var max_i = fileList.length - 1;
+		var changedCount = 0;
+		for (var i = 0; i <= max_i; i++) {
+			if (
+				$('#input-date-'+i).prop('value').length > 0
+				||
+				$('#input-time-'+i).prop('value').length > 0
+			)
+				changedCount++;
+		}
+		if (changedCount == 0) {
+			dmsDialog.alert("No changes entered.");
+			return false;
+		}
+
+		dmsDialog.confirm([
+			"Timestamps of " + changedCount + " of " + fileList.length + " files will be changed.",
+			"Continue?"
+		], function(OK){
+			if (!OK)
+				return false;
+			$('form#what-to-restamp').submit();
+		});
+	}
 	</script>
 
 	<style type="text/css">
@@ -128,12 +154,24 @@
 		}
 	</style>
 
-	 <!-- id="what-to-import" method="post" action="/import-submit" -->
+	<form id="what-to-restamp" method="post" action="/timestamp-submit">
 	<div class="gallery">
 	[% FOREACH file IN remote_files_with_details %]
 		<div id="div-for-image-[% encode_u64('file.filename') %]" class="for-image-file">
 			<div class="image">
-				<img xwidth="256" style="max-width: 256px; max-height: 12em;" src="/user-file/[% encode_u64(file.filename) %]">
+				[% IF file_is_image(file.filename) %]
+				<a class="ajaxAction" href="/user-open/[% encode_u64(file) %]">
+					<img style="max-width: 256px; max-height: 11em;" src="/user-file/[% encode_u64(file.filename) %]">
+				</a>
+				[% ELSIF file_is_video(file.filename) %]
+				<a class="ajaxAction" href="/user-open/[% encode_u64(file) %]">
+					<img src="/icons/icon-filetypevideo-128px.png" width="128" height="128">
+				</a>
+				[% ELSE %]
+				<a class="ajaxAction" href="/user-open/[% encode_u64(file) %]">
+					<img src="/icons/icon-filetypeunknown-128px.png" width="128" height="128">
+				</a>
+				[% END %]
 			</div>
 			<div class="options outer">
 				<div class="options inner">
