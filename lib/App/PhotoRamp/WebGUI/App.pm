@@ -12,41 +12,82 @@ package App::PhotoRamp::WebGUI::App {
   use App::PhotoRamp::WebGUI::App::Template {INCLUDE_PATH => "$ENV{PHOTORAMP_BASEDIR}/template"};
   use App::PhotoRamp::WebGUI::App::Router;
   use App::PhotoRamp;
+  use App::PhotoRamp::Util qw(:all);
 
   use DateTime ();
   use IO::File ();
   use Image::ExifTool ();
   use MIME::Base64 ();
   use Plack::MIME ();
+  use POSIX qw(strftime);
 
   my $exifTool = Image::ExifTool->new;
 
-  sub encode_u64 ($str) { b64_to_u64(MIME::Base64::encode($str)) }
-  sub decode_u64 ($str) { MIME::Base64::decode(u64_to_b64($str)) }
-  sub b64_to_u64 ($str) { $str =~ tr`+/=\n`-_`dr }
-  sub u64_to_b64 ($str) { $str =~ tr`-_`+/`r     }
+  # Set up logging
+  my $yearmo         = strftime('%Y%m', gmtime);
+  my $server_logfile = catfile($App::PhotoRamp::appdata_dir, "webgui-server-$yearmo.log");
+  my $server_log_fh  = IO::File->new($server_logfile, '>>')
+    or die "Cannot open $server_logfile! $!";
 
-  *App::PhotoRamp::WebGUI::App::Template::set_defaults = sub ($self) {
-    $self->set(
-      encode_u64    => \&encode_u64,
-      server_pid    => $$,
-      file_is_image => \&App::PhotoRamp::file_is_image,
-      file_is_video => \&App::PhotoRamp::file_is_video,
-      file_is_audio => \&App::PhotoRamp::file_is_audio,
-    );
-    $self;
-  };
+  $server_log_fh->print(sprintf("SERVER $$ STARTED at %s.\n\n", time));
+  $server_log_fh->autoflush(1);
+  open STDERR, '>&', $server_log_fh;
 
-  sub app_with_static_server {
-    App::PhotoRamp::WebGUI::App->app(
-      serve_static_files => 1,
-      static_docroot     => "$ENV{PHOTORAMP_BASEDIR}/static",
+  rotate_logs();
+
+  # Apply Middleware
+  require Plack::Middleware::Static;
+  use Plack::Middleware::AccessLog;
+  sub apply_middleware ($app) {
+    $app = Plack::Middleware::Static->wrap($app,
+      path => qr//,
+      root => "$ENV{PHOTORAMP_BASEDIR}/static/",
+      pass_through => 1
     );
+    $app = Plack::Middleware::AccessLog->wrap($app,
+      logger => sub { $server_log_fh->print(@_) }
+    );
+    return $app;
   }
 
+  sub rotate_logs {
+    my $now  = DateTime->now->truncate(to => 'day');
+    $now->set_day(14);
+
+    # Gzip old logs
+    {
+      my $x = $now->clone;
+      $x->subtract(months => 1);
+      for (0..36) {
+        my $xyearmo = $x->strftime('%Y%m');
+        my $fname = catfile($App::PhotoRamp::appdata_dir, "webgui-server-$xyearmo.log");
+        if (-e $fname) {
+          warn "Gzipping old log $fname\n";
+          gzip_file($fname, "$fname.gz");
+          unlink $fname;
+        }
+        $x->subtract(months => 1);
+      }
+    }
+
+    # Remove logs more than 1 year old
+    {
+      my $x = $now->clone;
+      $x->subtract(years => 1);
+      for (0..36) {
+        my $xyearmo = $x->strftime('%Y%m');
+        my $fname = catfile($App::PhotoRamp::appdata_dir, "webgui-server-$xyearmo.log.gz");
+        if (-e $fname) {
+          warn "Deleting old log $fname\n";
+          unlink $fname;
+        }
+        $x->subtract(months => 1);
+      }
+    }
+  }
 
   #############################################################################
-  # Only routes below
+  # Routes
 
   route '/' => sub ($request, $response) {
     #$response->template->set(error_dialog => "Welcome");
@@ -358,6 +399,20 @@ package App::PhotoRamp::WebGUI::App {
     require Data::Dumper;
     return $response->render_text(Dumper($request));
   };
+}
+
+package App::PhotoRamp::WebGUI::App::Template {
+
+  sub set_defaults ($self) {
+    $self->set(
+      encode_u64    => \&App::PhotoRamp::Util::encode_u64,
+      server_pid    => $$,
+      file_is_image => \&App::PhotoRamp::file_is_image,
+      file_is_video => \&App::PhotoRamp::file_is_video,
+      file_is_audio => \&App::PhotoRamp::file_is_audio,
+    );
+    $self;
+  }
 }
 
 1;

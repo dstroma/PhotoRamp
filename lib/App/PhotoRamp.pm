@@ -1,7 +1,10 @@
-use v5.34;
+use v5.26;
+use strict;
+use warnings;
 package App::PhotoRamp 0.01 {
   use App::PhotoRamp::Journal;
   use App::PhotoRamp::Signatures;
+  use App::PhotoRamp::Util qw(:all);
 
   use DateTime ();
   use DBI;
@@ -10,11 +13,13 @@ package App::PhotoRamp 0.01 {
   use File::Copy ();
   use File::Find::Rule;
   use File::Spec;  # for paths
+  use File::stat;  # for oo-stat
   use File::Temp;  # for tempfiles
   use Image::ExifTool ();
   use JSON::MaybeXS;
   use Fcntl ':seek';
   use autodie;
+
   use constant WINDOWS_OS => (eval "use Win32; 1" ? 1 : 0);
 
   our $APP_NAME             = 'PhotoRamp';
@@ -22,6 +27,7 @@ package App::PhotoRamp 0.01 {
   our $username             = get_username();
   our $remote_photos_dir;
   our $local_photos_dir     = get_user_pictures_dir();
+  our $appdata_dir          = get_user_appdata_dir();
   my  $journal_file         = get_user_journal_filename();
   my  $dbh;
   my  $exifTool             = Image::ExifTool->new;
@@ -56,10 +62,10 @@ package App::PhotoRamp 0.01 {
 
     if (WINDOWS_OS) {
       return $dir if defined ($dir = Win32::GetFolderPath(Win32::CSIDL_MYPICTURES));
-      return $dir if $username and -d ($dir = "C:\Users\$username\Pictures");
-      return $dir if $username and -d ($dir = "C:\Documents and Settings\$username\My Pictures");
-      return $dir if $username and -d ($dir = "C:\Documents\$username\My Pictures");
-      return $dir if -d ($dir = "C:\My Documents\My Pictures");
+      return $dir if $username and -d ($dir = sprintf('C:\Users\%s\Pictures', $username));
+      return $dir if $username and -d ($dir = sprintf('C:\Documents and Settings\%s\My Pictures', $username));
+      return $dir if $username and -d ($dir = sprintf('C:\Documents\%s\My Pictures', $username));
+      return $dir if -d ($dir = 'C:\My Documents\My Pictures');
       die "Unable to determine My Pictures directory (Windows).\n";
     } else {
       return $dir if defined $ENV{HOME} and -d ($dir = "$ENV{HOME}/Pictures");
@@ -72,19 +78,19 @@ package App::PhotoRamp 0.01 {
     }
   }
 
-  sub get_user_journal_dir {
+  sub get_user_appdata_dir {
     my $parent_dir = eval {
       my $dir;
       if (WINDOWS_OS) {
         return $dir if defined ($dir = Win32::GetFolderPath(Win32::CSIDL_APPDATA));
-        return $dir if $username and -d ($dir = "C:\Documents and Settings\$username\Application Data");
-        return $dir if $username and -d ($dir = "C:\Documents\$username\Application Data");
+        return $dir if $username and -d ($dir = sprintf(q{C:\Documents and Settings\%s\Application Data}, $username));
+        return $dir if $username and -d ($dir = sprintf(q{C:\Documents\$username\Application Data}, $username));
         return $dir if -d ($dir = 'C:\\');
         die "Unable to determine application data directory (Windows).\n";
       } else {
         return $dir if defined $ENV{HOME} and -d ($dir = $ENV{HOME});
-        return $dir if defined $username and -d ($dir = "/home/$username");
-        return $dir if defined $username and -d ($dir = "/Users/$username");
+        return $dir if defined  $username and -d ($dir = "/home/$username");
+        return $dir if defined  $username and -d ($dir = "/Users/$username");
         die "Unable to determine user home directory (non-Windows).\n";
       }
     } or die $@;
@@ -99,7 +105,7 @@ package App::PhotoRamp 0.01 {
 
   sub get_user_journal_filename {
     my $version = eval { $App::PhotoRamp::Journal::DB_VERSION } // 0;
-    catfile(get_user_journal_dir(), "journal-$version.db");
+    catfile(get_user_appdata_dir(), "journal-$version.db");
   }
 
   sub debug_local_photos_dir {
@@ -113,7 +119,6 @@ package App::PhotoRamp 0.01 {
     return $dcims[0];
   }
 
-  sub catfile               (@parts)  { File::Spec->catfile(@parts);  }
   sub set_local_photos_dir  ($newdir) { $local_photos_dir  = $newdir; }
   sub set_remote_photos_dir ($newdir) { $remote_photos_dir = $newdir; }
   sub get_last_char                   { substr($_[0], -1, 1) }
@@ -166,27 +171,37 @@ package App::PhotoRamp 0.01 {
       CREATE TABLE ipc (
         id         integer PRIMARY KEY,
         process_id integer,
-        message    text,
-        read       boolean default FALSE
+        message    text
       );
     ');
   }
 
   sub get_ipc_messages {
-    state $sth_select = $dbh->prepare('SELECT id, message FROM ipc WHERE read = false ORDER BY id ASC');
-    state $sth_update = $dbh->prepare('UPDATE ipc SET read = TRUE where id = ?');
+    state $last_read_id = 0;
+    state $sth_select = $dbh->prepare('SELECT id, message FROM ipc WHERE id > ? ORDER BY id ASC')
+      or die $dbh->errstr;
+    state $sth_clean  = $dbh->prepare('DELETE FROM ipc WHERE id < ?')
+      or die $dbh->errstr;
 
-    $sth_select->execute();
+    $sth_select->execute($last_read_id);
     my @messages;
     while (my ($new_id, $new_message) = $sth_select->fetchrow_array) {
-      push @messages, decode_json($new_message);
-      $sth_update->execute($new_id);
+      push @messages, (eval { decode_json($new_message) } // $new_message);
+      $last_read_id = $new_id;
+    }
+
+    # Random clean up
+    if (rand() < 0.11) {
+      eval {
+        $sth_clean->execute($last_read_id - 1)
+          or die $sth_clean->errstr;
+      } or warn "DEBUG: Unable to clean up table ipc, $@";
     }
     return @messages;
   }
 
   sub put_ipc_message ($message) {
-    state $sth_insert = $dbh->prepare('INSERT INTO ipc (process_id, message, read) VALUES (?,?,false)');
+    state $sth_insert = $dbh->prepare('INSERT INTO ipc (process_id, message) VALUES (?,?)');
     $message = encode_json($message) if ref $message;
     $sth_insert->execute($$, $message);
     return 1;
@@ -299,7 +314,7 @@ package App::PhotoRamp 0.01 {
     if (@ARGV) {
       my @manual_paths = map { $_ =~ m/^[-]{0,2}DCIM_PATH=(.+)$/i ? $1 : () } @ARGV;
       if (@manual_paths) {
-        warn "Using manual DCIM path(s)!";
+        warn "DEBUG: Using manual DCIM path(s)!";
         return @manual_paths;
       }
     }
@@ -317,7 +332,7 @@ package App::PhotoRamp 0.01 {
       return;
     }
     my @dirs = File::Find::Rule->directory->name('DCIM')->maxdepth(3)->in($base);
-    warn "DEBUG: " . join ",", @dirs;
+    warn "DEBUG: DCIM paths: " . join ",", @dirs;
     return @dirs;
   }
 
@@ -472,6 +487,7 @@ package App::PhotoRamp 0.01 {
 
     # Copy and verify. File::Copy returns 1 on success 0 on fail
     File::Copy::copy($from, $to) or die "Unable to copy file: $!";
+    eval { utime(time, stat($from)->mtime, $to) } or warn $@;
     my $log_id = $journal->log_action($from, $to, action => 'COPY', reason => 'IMPORT');
 
     verify_files_identical($from, $to)

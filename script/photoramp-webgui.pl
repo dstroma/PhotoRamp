@@ -9,5 +9,5 @@ my $server = HTTP::Server::PSGI->new(
   timeout => 60,
 );
 
-my $app = App::PhotoRamp::WebGUI::App->app_with_static_server;
+my $app = App::PhotoRamp::WebGUI::App->app;
 $server->run($app);

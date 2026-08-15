@@ -1,4 +1,6 @@
 use v5.36;
+use strict;
+use warnings;
 package App::PhotoRamp::Journal {
   use App::PhotoRamp::Signatures;
   use DBI qw(:sql_types);
@@ -23,12 +25,10 @@ package App::PhotoRamp::Journal {
   );
 
   my %db_constants = map { $db_constants[$_] => $_ } 0 .. $#db_constants;
-
   sub constant { $db_constants{pop @_} // undef }
 
   die 'Incorrect constant value!' unless constant('FALSE') == 0;
   die 'Incorrect constant value!' unless constant('TRUE')  == 1;
-
 
   # OO Code ###################################################################
   sub new_or_open ($class, $dbfile) {
@@ -73,7 +73,7 @@ package App::PhotoRamp::Journal {
         filesize        integer,
         filemd5_b64     text,
         exif_gzip       blob,
-        exif_thumb      blob,
+        --exif_thumb      blob,
         FOREIGN KEY (loctype) REFERENCES constants(id)
       ) STRICT
     }) or die "Cannot setup db!";
@@ -115,9 +115,6 @@ package App::PhotoRamp::Journal {
       $loctype = 'REMOTE' if $App::PhotoRamp::remote_photos_dir and $file =~ m/^$App::PhotoRamp::remote_photos_dir/;
       $loctype = 'LOCAL'  if $App::PhotoRamp::local_photos_dir  and $file =~ m/^$App::PhotoRamp::local_photos_dir/;
 
-      # Note on thumbnails: only store thumbnails for TO file
-      # This is both for privacy (in case user deletes a file) and disk space
-
       my %info;
       $info{loctype}    = constant($loctype) if $loctype;
       $info{filename}   = $file;
@@ -125,8 +122,8 @@ package App::PhotoRamp::Journal {
       $info{filesize}   = [ $stat[7]   , SQL_INTEGER ] if @stat;
       $info{exif_gzip}  = [ $exif_gzip , SQL_BLOB    ]
         if $exif_gzip;
-      $info{exif_thumb} = [ $thumb->$* , SQL_BLOB    ]
-        if (defined $to and $file eq $to) and $thumb and ref $thumb;
+      #$info{exif_thumb} = [ $thumb->$* , SQL_BLOB    ]
+      #  if (defined $to and $file eq $to) and $thumb and ref $thumb;
 
       $self->db_insert('file_info', \%info);
       $info{id} = $self->db_last_id('file_info');

@@ -1,0 +1,6 @@
+use v5.34;
+use experimental 'signatures';
+use experimental 'try';
+package App::PhotoRamp::WebGUI::Data;
+
+1;
