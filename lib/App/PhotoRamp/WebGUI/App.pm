@@ -12,22 +12,18 @@ package App::PhotoRamp::WebGUI::App {
 
   use DateTime ();
   use IO::File ();
-  use Image::ExifTool ();
   use MIME::Base64 ();
   use Plack::MIME ();
   use POSIX qw(strftime);
+  use Fcntl qw(:flock);
 
   use constant MINUTES       => 60;
   use constant MAX_IDLE_TIME => 1*MINUTES;
 
-  our $last_activity_time = time;
-
-  my $exifTool = Image::ExifTool->new;
-
   # Set up logging
-  my $yearmo         = strftime('%Y%m', gmtime);
-  my $server_logfile = catfile($App::PhotoRamp::appdata_dir, "webgui-server-$yearmo.log");
-  my $server_log_fh  = IO::File->new($server_logfile, '>>')
+  my  $yearmo         = strftime('%Y%m', gmtime);
+  our $server_logfile = catfile($App::PhotoRamp::appdata_dir, "webgui-server-$yearmo.log");
+  my  $server_log_fh  = IO::File->new($server_logfile, '>>')
     or die "Cannot open $server_logfile! $!";
 
   $server_log_fh->print(sprintf("SERVER $$ STARTED at %s.\n\n", time));
@@ -90,15 +86,11 @@ package App::PhotoRamp::WebGUI::App {
   #############################################################################
   # Routes
 
-  # For internal monitoring (don't update activity time for this one)
-  route '/server-status/last-active' => sub ($request, $response) {
-    return $response->render_text($last_activity_time);
-  };
-
-
   # Update activity time
   filter before => sub ($request, $response) {
-    $last_activity_time = time;
+    # Just in cae the accesslog middleware doesn't work
+    my $t = time;
+    utime $t, $t, $server_logfile;
     return $response->next;
   };
 

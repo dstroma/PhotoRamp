@@ -35,6 +35,8 @@ sub launch {
   die "Unable to fork! $@"
     if !defined $child_pid;
 
+  $0 = $in_parent ? 'PhotoRamp WebGUI Server' : 'PhotoRamp WebGUI Monitor';
+
   if ($in_parent) {
     my $server = HTTP::Server::PSGI->new(
       host    => '127.0.0.1',
@@ -54,22 +56,14 @@ sub launch {
   # Launch browser
   open_browser('http://localhost:5678');
 
-  my $retries = 0;
-  while ($retries < 5) {
-    sleep 59;
-
-    my $t = test_request();
-    if (!$t) {
-      $retries++;
-      next;
-    }
-
-    if (time - int($t) > 300) {
-      warn "DEBUG: Server has been inactive, terminating.\n";
+  # Monitor
+  while (1) {
+    my $t = [stat($App::PhotoRamp::WebGUI::App::server_logfile)]->[9];
+    if (time - $t > 300) {
+      warn "DEBUG: Server has been inactive as of " . time() . ", terminating.\n";
       kill 'TERM', $parent_pid;
       exit;
     }
-    $retries = 0;
   }
 }
 
@@ -77,7 +71,7 @@ sub open_browser {
   # Windows
   # Linux
   # MacOS
-  `$_[0]`;
+  `open $_[0]`;
 }
 
 sub test_request {
@@ -85,8 +79,8 @@ sub test_request {
   require HTTP::Request;
   require HTTP::Response;
 
-  my $req = HTTP::Request->new(GET => 'http://localhost:5678/server-status/last-active');
+  my $req = HTTP::Request->new(GET => 'http://localhost:5678/check-alive');
   my $res = Plack::LWPish->new->request($req); # returns HTTP::Response
 
-  return ($res->is_success and $res->code == 200) ? $res->content : undef;
+  return ($res->is_success and $res->code == 200 and $res->content =~ m/OK/) ? 1 : undef;
 }
