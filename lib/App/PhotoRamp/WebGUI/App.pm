@@ -20,6 +20,8 @@ package App::PhotoRamp::WebGUI::App {
   use constant MINUTES       => 60;
   use constant MAX_IDLE_TIME => 1*MINUTES;
 
+  our $master_pid = $$;
+
   # Set up logging
   my  $yearmo         = strftime('%Y%m', gmtime);
   our $server_logfile = catfile($App::PhotoRamp::appdata_dir, "webgui-server-$yearmo.log");
@@ -104,7 +106,7 @@ package App::PhotoRamp::WebGUI::App {
 
   route '/get-messages/server-{server_pid}' => sub ($request, $response) {
     my $rpid = $request->route_param('server_pid');
-    unless ($rpid eq $$) {
+    unless ($rpid eq $master_pid) {
       $response->status(500);
       $response->body('Error');
       return $response;
@@ -409,11 +411,12 @@ package App::PhotoRamp::WebGUI::App {
 }
 
 package App::PhotoRamp::WebGUI::App::Template {
-
+  our $master_pid = $$;
   sub set_defaults ($self) {
     $self->set(
       encode_u64    => \&App::PhotoRamp::Util::encode_u64,
-      server_pid    => $$,
+      server_pid    => $master_pid,
+      worker_pid    => sub { eval '$$' },
       file_is_image => \&App::PhotoRamp::file_is_image,
       file_is_video => \&App::PhotoRamp::file_is_video,
       file_is_audio => \&App::PhotoRamp::file_is_audio,

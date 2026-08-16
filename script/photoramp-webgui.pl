@@ -30,7 +30,8 @@ sub setup {
 
 sub launch {
   require App::PhotoRamp::WebGUI::App;
-  require HTTP::Server::PSGI;
+  #require HTTP::Server::PSGI;
+  require Plack::Handler::Starlet;
 
   my $parent_pid = $$;
   my $in_parent  = my $child_pid = fork();
@@ -41,10 +42,17 @@ sub launch {
   $0 = $in_parent ? 'PhotoRamp WebGUI Server' : 'PhotoRamp WebGUI Monitor';
 
   if ($in_parent) {
-    my $server = HTTP::Server::PSGI->new(
+    #my $server = HTTP::Server::PSGI->new(
+    #  host    => '127.0.0.1',
+    #  port    => 5678,
+    #  timeout => 60,
+    #);
+    my $server = Plack::Handler::Starlet->new(
       host    => '127.0.0.1',
       port    => 5678,
-      timeout => 60,
+      keepalive_timeout => 1,
+      max_keepalive_requests => 10,
+      max_workers => 4
     );
     $server->run(App::PhotoRamp::WebGUI::App->app);
     exit;
@@ -70,6 +78,7 @@ sub launch {
       kill 'TERM', $parent_pid;
       exit;
     }
+    sleep 60;
   }
 }
 
