@@ -1,4 +1,5 @@
-requires 'perl', 'v5.26';
+# requires 'perl', 'v5.26';
+requires 'perl', 'v5.36'; # PXF requires 5.36
 
 requires 'DateTime';
 requires 'DBI';
@@ -8,10 +9,15 @@ requires 'File::Copy';
 requires 'File::Find::Rule';
 requires 'File::Spec';
 requires 'File::Temp';
+requires 'Gzip::Libdeflate';
 requires 'Image::ExifTool';
 requires 'JSON::MaybeXS';
 requires 'MIME::Base64';
 requires 'Gzip::Libdeflate';
+
+# For WebGui
+requires 'HTTP::Server::PSGI';
+requires 'PlackX::Framework';
 
 # Technically only required for perl < 5.44
 requires 'Sublike::Extended', '0.29';

@@ -1,11 +1,7 @@
-use v5.34;
+use v5.26;
 use warnings;
 use strict;
 use experimental 'signatures';
-
-BEGIN {
-  $ENV{'PHOTORAMP_BASEDIR'} = '/Users/dstroma/devel/App-PhotoRamp';
-}
 
 package App::PhotoRamp::WebGUI::App {
   use PlackX::Framework qw(Template);
@@ -20,6 +16,11 @@ package App::PhotoRamp::WebGUI::App {
   use MIME::Base64 ();
   use Plack::MIME ();
   use POSIX qw(strftime);
+
+  use constant MINUTES       => 60;
+  use constant MAX_IDLE_TIME => 1*MINUTES;
+
+  our $last_activity_time = time;
 
   my $exifTool = Image::ExifTool->new;
 
@@ -89,6 +90,20 @@ package App::PhotoRamp::WebGUI::App {
   #############################################################################
   # Routes
 
+  # For internal monitoring (don't update activity time for this one)
+  route '/server-status/last-active' => sub ($request, $response) {
+    return $response->render_text($last_activity_time);
+  };
+
+
+  # Update activity time
+  filter before => sub ($request, $response) {
+    $last_activity_time = time;
+    return $response->next;
+  };
+
+
+  # User routes
   route '/' => sub ($request, $response) {
     #$response->template->set(error_dialog => "Welcome");
     return $response->render_template('main.phtml');
@@ -397,7 +412,7 @@ package App::PhotoRamp::WebGUI::App {
 
   route '/debug' => sub ($request, $response) {
     require Data::Dumper;
-    return $response->render_text(Dumper($request));
+    return $response->render_text(Data::Dumper::Dumper($request));
   };
 }
 

@@ -10,8 +10,6 @@ package App::PhotoRamp::WebGUI::Data {
   use Gzip::Libdeflate;
   use autodie;
 
-  my $gz = Gzip::Libdeflate->new;
-
   sub trimcfln ($str) {
     $str =~ s/[\r\n]+$//g;
     return $str;
@@ -30,6 +28,7 @@ package App::PhotoRamp::WebGUI::Data {
   }
 
   sub install ($path = "./extracted-data") {
+    my $gz = Gzip::Libdeflate->new;
     my $fh = seek_end_tag(get_self_fh());
 
     while (my $line = <$fh>) {
