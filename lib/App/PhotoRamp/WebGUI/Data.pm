@@ -46,7 +46,7 @@ package App::PhotoRamp::WebGUI::Data {
         if $read < $size;
 
       $filecont = $gz->decompress(decode_base64($filecont));
-      save(\$filecont => catfile($path, $filename));
+      save($filecont => catfile($path, $filename));
     }
     close $fh;
   }
@@ -57,9 +57,7 @@ package App::PhotoRamp::WebGUI::Data {
 
     open my $fh, '>', $filename;
     binmode $fh;
-    ref $content ?
-      print $fh $$content :
-      print $fh  $content ;
+    print $fh $content;
     close $fh;
   }
 }
