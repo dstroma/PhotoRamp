@@ -113,17 +113,19 @@ package App::PhotoRamp::WebGUI::App {
     }
 
     my $last_id;
-    if (my $cook = $request->cookies->{last_sent_message_id}) {
+    if (my $cook = $request->cookies->{"last_sent_message_id-$master_pid"}) {
       ($last_id) = $cook =~ m/^\D*(\d+)\D*$/;
     }
-    if (my $cook = $request->cookies->{last_read_message_id}) {
+    if (my $cook = $request->cookies->{"last_read_message_id-$master_pid"}) {
       ($last_id) = $cook =~ m/^\D*(\d+)\D*$/;
     }
 
     my @messages = App::PhotoRamp::get_ipc_messages($last_id ? $last_id : ());
 
-    $response->cookies->{last_sent_message_id} = $messages[-1]->{id}
-      if @messages;
+    $response->cookies->{"last_sent_message_id-$master_pid"} = {
+      'value'   => $messages[-1]->{id},
+      'max-age' => 60*60*24,
+    } if @messages;
 
     return $response->render_json({ messages => \@messages, server_pid => $master_pid });
   };
