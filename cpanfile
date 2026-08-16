@@ -16,6 +16,7 @@ requires 'MIME::Base64';
 requires 'Template';
 
 # For WebGui
+requires 'Starlet';
 requires 'HTTP::Server::PSGI';
 requires 'PlackX::Framework', '0.30';
 
