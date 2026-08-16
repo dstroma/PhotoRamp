@@ -91,6 +91,7 @@ package App::PhotoRamp::WebGUI::App {
   # Update activity time
   filter before => sub ($request, $response) {
     # Just in cae the accesslog middleware doesn't work
+    warn "DEBUG: Updating utime of server log in pid $$";
     my $t = time;
     utime $t, $t, $server_logfile;
     return $response->next;
@@ -149,6 +150,11 @@ package App::PhotoRamp::WebGUI::App {
     my $last_message;
     my $fork = fork;
     if (defined $fork and $fork == 0) {
+      $0 = 'PhotoRamp WebGUI Task Worker';
+      warn "DEBUG: Forked task worker $$";
+      undef $request->{env};
+      undef $response->{env};
+
       # In Child Process
       my $message_printer = sub ($status, $message, @slurp) {
         App::PhotoRamp::put_ipc_message({ status => $status, user_message => $message, @slurp });
@@ -190,9 +196,11 @@ package App::PhotoRamp::WebGUI::App {
         '/cleanup-confirm' ;
 
       $message_printer->('DONE', 'Done.', data => $data, goto_url => $goto_url);
+      warn "DEBUG: Ending task worker $$\n";
       exit 0;
     }
 
+    warn "DEBUG: $$ Rendering template\n";
     return $response->render_template('work.phtml');
   };
 

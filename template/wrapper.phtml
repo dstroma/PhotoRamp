@@ -16,13 +16,14 @@
                 window.location = loc;
             }
 
-            var checkInterval_ms       = [% check_interval OR '1000' %]
-            var serverPid              = '[% server_pid %]';
-            var messages               = [];
+            var checkInterval_ms        = [% check_interval OR '1000' %]
+            var serverPid               = '[% server_pid %]';
+            var messages                = [];
             //var lastReadMessageId      = [% REQUEST.param('last_read_message_id') OR -1 %];
-            var checkMessagesTimeout   = setTimeout(checkMessages, checkInterval_ms);
-            var checkMessagesRetries   = 0;
-            var attemptedErrorRecovery = false;
+            var checkMessagesTimeout    = setTimeout(checkMessages, checkInterval_ms);
+            var checkMessagesRetries    = 0;
+            var checkMessagesRetriesMax = 10;
+            var attemptedErrorRecovery  = false;
             function checkMessages(){
                 $.ajax({
                     url: '/get-messages/server-' + serverPid,
@@ -50,12 +51,12 @@
                     },
                     error: function(){
                         //clearInterval(checkMessagesInterval);
-                        if (attemptedErrorRecovery) {
+                        if (attemptedErrorRecovery && checkMessagesRetries >= checkMessagesRetriesMax) {
                             dmsDialog.pressCx();
                             $('h1').html("Error");
                             $('div#main-content').hide();
                             $('div#crash-notice').show();
-                        } else {
+                        } else if (!attemptedErrorRecovery) {
                             startErrorRecovery();
                         }
                     }
@@ -65,6 +66,7 @@
             function startErrorRecovery(){
                 dmsDialog.wait(["Program is busy or not responding.", "Retrying..."]);
                 setTimeout(function(){
+                    checkMessagesRetries = checkMessagesRetries + 1;
                     attemptedErrorRecovery = true;
                     checkMessages();
                 }, checkInterval_ms*4);
