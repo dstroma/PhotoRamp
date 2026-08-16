@@ -108,12 +108,24 @@ package App::PhotoRamp::WebGUI::App {
     my $rpid = $request->route_param('server_pid');
     unless ($rpid eq $master_pid) {
       $response->status(500);
-      $response->body('Error');
+      $response->body("Error: Server master process ID is $master_pid, not $rpid!");
       return $response;
     }
 
-    my @messages = App::PhotoRamp::get_ipc_messages();
-    return $response->render_json({ messages => \@messages, server_pid => $$ });
+    my $last_id;
+    if (my $cook = $request->cookies->{last_sent_message_id}) {
+      ($last_id) = $cook =~ m/^\D*(\d+)\D*$/;
+    }
+    if (my $cook = $request->cookies->{last_read_message_id}) {
+      ($last_id) = $cook =~ m/^\D*(\d+)\D*$/;
+    }
+
+    my @messages = App::PhotoRamp::get_ipc_messages($last_id ? $last_id : ());
+
+    $response->cookies->{last_sent_message_id} = $messages[-1]->{id}
+      if @messages;
+
+    return $response->render_json({ messages => \@messages, server_pid => $master_pid });
   };
 
 

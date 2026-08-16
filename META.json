@@ -59,6 +59,7 @@
             "JSON::MaybeXS" : "0",
             "MIME::Base64" : "0",
             "PlackX::Framework" : "0.30",
+            "Starlet" : "0",
             "Sublike::Extended" : "0.29",
             "Template" : "0",
             "perl" : "v5.36.0"

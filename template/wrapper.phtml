@@ -16,22 +16,27 @@
                 window.location = loc;
             }
 
-            var checkInterval_ms = [% check_interval OR '1000' %]
-            var serverPid = '[% server_pid %]';
-            var messages = [];
-            var checkMessagesInterval = setInterval(checkMessages, checkInterval_ms);
+            var checkInterval_ms       = [% check_interval OR '1000' %]
+            var serverPid              = '[% server_pid %]';
+            var messages               = [];
+            //var lastReadMessageId      = [% REQUEST.param('last_read_message_id') OR -1 %];
+            var checkMessagesTimeout   = setTimeout(checkMessages, checkInterval_ms);
+            var checkMessagesRetries   = 0;
             var attemptedErrorRecovery = false;
             function checkMessages(){
                 $.ajax({
                     url: '/get-messages/server-' + serverPid,
-                    timeout: checkInterval_ms,
+                    timeout: checkInterval_ms*5,
                     success: function(data, textStatus, jqXHR) {
+                        checkMessagesRetries = 0;
+
                         //console.log("Got data!");
                         //console.log(data);
                         messages = messages.concat(data.messages);
 
                         var last_message = data.messages.pop();
                         if (last_message && last_message.user_message) {
+                            //lastReadMessage =
                             $('#user-message').html(last_message.user_message);
                         }
 
@@ -40,9 +45,11 @@
                                 window.location = element.goto_url;
                             }
                         });
+
+                        checkMessagesTimeout = setTimeout(checkMessages, checkInterval_ms);
                     },
                     error: function(){
-                        clearInterval(checkMessagesInterval);
+                        //clearInterval(checkMessagesInterval);
                         if (attemptedErrorRecovery) {
                             dmsDialog.pressCx();
                             $('h1').html("Error");
@@ -56,12 +63,11 @@
             }
 
             function startErrorRecovery(){
-                dmsDialog.wait(["An error has occurred.", "Retrying..."]);
+                dmsDialog.wait(["Program is busy or not responding.", "Retrying..."]);
                 setTimeout(function(){
                     attemptedErrorRecovery = true;
-                    checkMessagesInterval = setInterval(checkMessages, checkInterval_ms);
                     checkMessages();
-                }, 9000);
+                }, 5000);
             };
 
             $().ready(function(){

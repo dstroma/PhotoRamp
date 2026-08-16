@@ -24,6 +24,7 @@ package App::PhotoRamp 0.01 {
 
   our $APP_NAME             = 'PhotoRamp';
   our $FILE_EXTENSION_REGEX = join '|', media_file_extensions();
+  our $master_pid           = $$;
   our $username             = get_username();
   our $remote_photos_dir;
   our $local_photos_dir     = get_user_pictures_dir();
@@ -176,24 +177,26 @@ package App::PhotoRamp 0.01 {
     ');
   }
 
-  sub get_ipc_messages {
-    state $last_read_id = 0;
+  sub get_ipc_messages ($user_last_read_id = 0) {
+    state $server_last_read_id = 0;
     state $sth_select = $dbh->prepare('SELECT id, message FROM ipc WHERE id > ? ORDER BY id ASC')
       or die $dbh->errstr;
     state $sth_clean  = $dbh->prepare('DELETE FROM ipc WHERE id < ?')
       or die $dbh->errstr;
 
-    $sth_select->execute($last_read_id);
+    $sth_select->execute($user_last_read_id // 0);
     my @messages;
     while (my ($new_id, $new_message) = $sth_select->fetchrow_array) {
-      push @messages, (eval { decode_json($new_message) } // $new_message);
-      $last_read_id = $new_id;
+      $server_last_read_id = $new_id;
+      $new_message = eval { decode_json($new_message) } // {};
+      $new_message->{id} = $new_id;
+      push @messages, $new_message;
     }
 
     # Random clean up
-    if (rand() < 0.11) {
+    if (rand() < 0.1 and $server_last_read_id > 200) {
       eval {
-        $sth_clean->execute($last_read_id - 1) or die $sth_clean->errstr;
+        $sth_clean->execute($server_last_read_id - 100) or die $sth_clean->errstr;
       } or warn "DEBUG: Unable to clean up table ipc, $@";
     }
     return @messages;
@@ -202,7 +205,7 @@ package App::PhotoRamp 0.01 {
   sub put_ipc_message ($message) {
     state $sth_insert = $dbh->prepare('INSERT INTO ipc (process_id, message) VALUES (?,?)');
     $message = encode_json($message) if ref $message;
-    return $sth_insert->execute($$, $message);
+    return $sth_insert->execute($master_pid, $message);
   }
 
   sub verify_files_identical ($file1, $file2) {
