@@ -17,7 +17,7 @@ requires 'Template';
 
 # For WebGui
 requires 'HTTP::Server::PSGI';
-requires 'PlackX::Framework';
+requires 'PlackX::Framework', '0.30';
 
 # Technically only required for perl < 5.44
 requires 'Sublike::Extended', '0.29';
