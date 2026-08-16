@@ -3,6 +3,7 @@ use strict;
 use warnings;
 use v5.26;
 
+my ($appdata_dir, $log_file);
 setup();
 launch();
 
@@ -10,7 +11,9 @@ launch();
 
 sub setup {
   require App::PhotoRamp;
-  our $appdata_dir = $App::PhotoRamp::appdata_dir;
+  { no warnings 'once';
+    $appdata_dir = $App::PhotoRamp::appdata_dir;
+  }
   warn "DEBUG: appdata_dir will be $appdata_dir\n";
 
   require File::Spec;
@@ -57,8 +60,11 @@ sub launch {
   open_browser('http://localhost:5678');
 
   # Monitor
+  { no warnings 'once';
+    $log_file = $App::PhotoRamp::WebGUI::App::server_logfile;
+  }
   while (1) {
-    my $t = [stat($App::PhotoRamp::WebGUI::App::server_logfile)]->[9];
+    my $t = [stat($log_file)]->[9];
     if (time - $t > 300) {
       warn "DEBUG: Server has been inactive as of " . time() . ", terminating.\n";
       kill 'TERM', $parent_pid;

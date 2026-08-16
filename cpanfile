@@ -13,7 +13,7 @@ requires 'Gzip::Libdeflate';
 requires 'Image::ExifTool';
 requires 'JSON::MaybeXS';
 requires 'MIME::Base64';
-requires 'Gzip::Libdeflate';
+requires 'Template';
 
 # For WebGui
 requires 'HTTP::Server::PSGI';

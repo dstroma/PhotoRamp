@@ -127,7 +127,7 @@ package App::PhotoRamp 0.01 {
     return if $dbh;
 
     my $dbfile = catfile($temp_dir, 'photoramp-work.db');
-    warn "Database file will be located at $dbfile";
+    warn "DEBUG: Database file will be located at $dbfile\n";
     rename($dbfile => "$dbfile.old") if -e $dbfile;
     $dbh = DBI->connect("dbi:SQLite:dbname=$dbfile",'','');
     setup_db_table_remote_photos();
