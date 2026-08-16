@@ -6,6 +6,8 @@ use MIME::Base64 qw(encode_base64);
 use File::Copy qw(copy);
 use autodie;
 
+say "Running " . __FILE__;
+
 my $gz = Gzip::Libdeflate->new(level => 6);
 
 my @dirs = ('./static', './template');
@@ -33,3 +35,6 @@ foreach my $filename (sort { $a cmp $b } @files) {
 }
 
 close $outfh;
+
+say __FILE__ . 'completed';
+

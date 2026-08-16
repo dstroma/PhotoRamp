@@ -1,5 +1,5 @@
 {
-   "abstract" : "It's new $module",
+   "abstract" : "Digital camera image import helper tool",
    "author" : [
       "Dondi Michael Stroma <dstroma@gmail.com>"
    ],
@@ -41,8 +41,26 @@
          }
       },
       "runtime" : {
+         "recommends" : {
+            "Cpanel::JSON::XS" : "0"
+         },
          "requires" : {
-            "perl" : "5.008001"
+            "DBD::SQLite" : "0",
+            "DBI" : "0",
+            "DateTime" : "0",
+            "Digest::MD5" : "0",
+            "File::Copy" : "0",
+            "File::Find::Rule" : "0",
+            "File::Spec" : "0",
+            "File::Temp" : "0",
+            "Gzip::Libdeflate" : "0",
+            "HTTP::Server::PSGI" : "0",
+            "Image::ExifTool" : "0",
+            "JSON::MaybeXS" : "0",
+            "MIME::Base64" : "0",
+            "PlackX::Framework" : "0",
+            "Sublike::Extended" : "0.29",
+            "perl" : "v5.36.0"
          }
       },
       "test" : {
@@ -52,6 +70,17 @@
       }
    },
    "release_status" : "unstable",
+   "resources" : {
+      "bugtracker" : {
+         "web" : "https://github.com/dstroma/PhotoRamp/issues"
+      },
+      "homepage" : "https://github.com/dstroma/PhotoRamp",
+      "repository" : {
+         "type" : "git",
+         "url" : "https://github.com/dstroma/PhotoRamp.git",
+         "web" : "https://github.com/dstroma/PhotoRamp"
+      }
+   },
    "version" : "0.01",
    "x_serialization_backend" : "JSON::PP version 4.16",
    "x_static_install" : 1

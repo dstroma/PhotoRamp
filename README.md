@@ -1,7 +1,7 @@
-
+[![Actions Status](https://github.com/dstroma/PhotoRamp/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/dstroma/PhotoRamp/actions?workflow=test)
 # NAME
 
-App::PhotoRamp - It's new $module
+App::PhotoRamp - Digital camera image import helper tool
 
 # SYNOPSIS
 
@@ -9,7 +9,7 @@ App::PhotoRamp - It's new $module
 
 # DESCRIPTION
 
-App::PhotoRamp is ...
+See App::PhotoRamp::CLI, App::PhotoRamp::GUI, and App::PhotoRamp::WebGUI
 
 # LICENSE
 

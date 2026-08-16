@@ -1,7 +1,5 @@
 .DS_Store
 
-lib/App/PhotoRamp/WebGUI/Data.pm
-
 /.build/
 /_build/
 /Build
