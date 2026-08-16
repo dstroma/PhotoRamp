@@ -36,5 +36,5 @@ foreach my $filename (sort { $a cmp $b } @files) {
 
 close $outfh;
 
-say __FILE__ . 'completed';
+say __FILE__ . ' completed';
 
