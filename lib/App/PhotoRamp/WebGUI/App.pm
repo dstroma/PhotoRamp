@@ -396,7 +396,7 @@ package App::PhotoRamp::WebGUI::App {
   route '/user-open/:u64_filename' => sub ($request, $response) {
     my $filename  = decode_u64($request->route_param('u64_filename'));
 
-    `open "$filename"`;
+    if (fork() == 0) { `open "$filename"`; exit; }
 
     return $response->render_text('OK');
   };
