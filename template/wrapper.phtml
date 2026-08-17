@@ -27,9 +27,13 @@
             function checkMessages(){
                 $.ajax({
                     url: '/get-messages/server-' + serverPid,
-                    timeout: checkInterval_ms*2,
+                    timeout: checkInterval_ms*5,
                     success: function(data, textStatus, jqXHR) {
                         checkMessagesRetries = 0;
+                        if (attemptedErrorRecovery) {
+                            attemptedErrorRecovery = false;
+                            dmsDialog.pressCx();
+                        }
 
                         messages = messages.concat(data.messages);
 
@@ -61,9 +65,9 @@
 
             function startErrorRecovery(){
                 dmsDialog.wait(["Program is busy or not responding.", "Retrying..."]);
+                attemptedErrorRecovery = true;
                 setTimeout(function(){
                     checkMessagesRetries++;
-                    attemptedErrorRecovery = true;
                     checkMessages();
                 }, checkMessagesTimeout*2);
             };
