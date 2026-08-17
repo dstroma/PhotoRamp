@@ -30,8 +30,14 @@ sub setup {
 
 sub launch {
   require App::PhotoRamp::WebGUI::App;
-  #require HTTP::Server::PSGI;
-  require Plack::Handler::Starlet;
+  my $server_class;
+  foreach my $sc ('Plack::Handler::Starlet', 'HTTP::Server::PSGI') {
+    if (eval "require $sc; 1") {
+      $server_class = $sc;
+      last;
+    }
+  }
+  $server_class or die "No server module available!";
 
   my $parent_pid = $$;
   my $in_parent  = my $child_pid = fork();
@@ -42,17 +48,17 @@ sub launch {
   $0 = $in_parent ? 'PhotoRamp WebGUI Server' : 'PhotoRamp WebGUI Monitor';
 
   if ($in_parent) {
-    #my $server = HTTP::Server::PSGI->new(
-    #  host    => '127.0.0.1',
-    #  port    => 5678,
-    #  timeout => 60,
-    #);
-    my $server = Plack::Handler::Starlet->new(
+    my $server = $server_class->new(
       host    => '127.0.0.1',
       port    => 5678,
-      keepalive_timeout => 1,
-      max_keepalive_requests => 100,
-      max_workers => 4
+      timeout => 60,
+      (
+        $server_class =~ m/Starlet/ ? (
+          keepalive_timeout => 1,
+          max_keepalive_requests => 100,
+          max_workers => 4,
+        ) : ()
+      )
     );
     $server->run(App::PhotoRamp::WebGUI::App->app);
     exit;

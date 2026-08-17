@@ -34,6 +34,7 @@ package App::PhotoRamp 0.01 {
   our $db_file              = catfile($temp_dir, 'photoramp-work.db');
   my  $journal              = App::PhotoRamp::Journal->new_or_open($journal_file);
   my  $exifTool             = Image::ExifTool->new;
+  our @children             = ();
 
   setup_db();
 
@@ -348,6 +349,13 @@ package App::PhotoRamp 0.01 {
       if (@manual_paths) {
         warn "DEBUG: Using manual DCIM path(s)!";
         return @manual_paths;
+      }
+    }
+
+    if (WINDOWS_OS) {
+      for my $letter ('A'..'Z') {
+        my @dirs = grep { -d $_ } map { "$_:/DCIM" } ('A'..'Z');
+        return @dirs;
       }
     }
 

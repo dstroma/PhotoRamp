@@ -16,7 +16,6 @@ requires 'MIME::Base64';
 requires 'Template';
 
 # For WebGui
-requires 'Starlet';
 requires 'HTTP::Server::PSGI';
 requires 'PlackX::Framework', '0.30';
 
@@ -24,8 +23,8 @@ requires 'PlackX::Framework', '0.30';
 requires 'Sublike::Extended', '0.29';
 
 recommends 'Cpanel::JSON::XS';
+recommends 'Starlet';
 
 on 'test' => sub {
     requires 'Test::More', '0.98';
 };
-
