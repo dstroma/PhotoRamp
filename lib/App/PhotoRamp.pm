@@ -41,7 +41,12 @@ package App::PhotoRamp 0.01 {
 
   sub dbh {
     state %handles = ();
-    return $handles{$$} //= DBI->connect("dbi:SQLite:dbname=$db_file",'','');
+    return $handles{$$} if $handles{$$};
+
+    my $dbh = DBI->connect("dbi:SQLite:dbname=$db_file",'','');
+    $dbh->do('PRAGMA journal_mode=WAL');
+
+    return $handles{$$} = $dbh;
   }
 
   sub media_file_extensions () {
@@ -215,6 +220,7 @@ package App::PhotoRamp 0.01 {
     }
 
     # Set timeout to original value
+    $sth_select->finish;
     $dbh->sqlite_busy_timeout($to_orig);
 
     return @messages;
@@ -281,9 +287,10 @@ package App::PhotoRamp 0.01 {
 
     # Work in groups of 10 files to not hog db or spam messages
     my $files_count = scalar @files;
+    my $group_size  = $files_count < 100 ? 10: 20;
     my $cur = 1;
     while (@files) {
-      my $group_count = (scalar @files > 10) ? 10 : scalar @files;
+      my $group_count = (scalar @files > $group_size) ? $group_size : scalar @files;
       my @group = map { shift @files } 1 .. $group_count;
 
       $callback->("analyzing $cur of $files_count");
