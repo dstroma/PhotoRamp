@@ -90,8 +90,7 @@ package App::PhotoRamp::WebGUI::App {
 
   # Update activity time
   filter before => sub ($request, $response) {
-    # Just in cae the accesslog middleware doesn't work
-    warn "DEBUG: Updating utime of server log in pid $$";
+    # Just in case the accesslog middleware doesn't work
     my $t = time;
     utime $t, $t, $server_logfile;
     return $response->next;
@@ -151,7 +150,6 @@ package App::PhotoRamp::WebGUI::App {
     my $fork = fork;
     if (defined $fork and $fork == 0) {
       $0 = 'PhotoRamp WebGUI Task Worker';
-      warn "DEBUG: Forked task worker $$";
 
       # In Child Process
       my $message_printer = sub ($status, $message, @slurp) {
@@ -167,7 +165,7 @@ package App::PhotoRamp::WebGUI::App {
       sleep 1;
 
       if (App::PhotoRamp::remote_files_count() == 0) {
-        $message_printer->('DONE', 'Done. (No remote files found.)');
+        $message_printer->('DONE', 'Done (no remote files found).');
         exit;
       }
 
@@ -194,7 +192,6 @@ package App::PhotoRamp::WebGUI::App {
         '/cleanup-confirm' ;
 
       $message_printer->('DONE', 'Done.', data => $data, goto_url => $goto_url);
-      warn "DEBUG: Ending task worker $$\n";
       exit 0;
     }
 

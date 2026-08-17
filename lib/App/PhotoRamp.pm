@@ -253,7 +253,7 @@ package App::PhotoRamp 0.01 {
     return 1;
   }
 
-  sub index_files ($where, $callback = undef) {
+  sub index_files ($where, $callback = sub { }) {
     my $dbh = dbh();
     my $dir;
     if ($where eq 'remote') {
@@ -269,6 +269,7 @@ package App::PhotoRamp 0.01 {
     eval 'setup_db_table_'.$where.'_photos()';
 
     # Index files
+    $callback->('building file list');
     my $table = $where . '_photos';
     my @files = File::Find::Rule
       ->file
@@ -276,21 +277,24 @@ package App::PhotoRamp 0.01 {
       ->name(qr/^[^\.].+\.($FILE_EXTENSION_REGEX)$/i)
       ->in($dir);
 
-    my $count = scalar @files;
-    my $cur   = 1;
     $dbh->do("DELETE FROM $table");
-    my $sth = $dbh->prepare("INSERT INTO $table (filename, size) VALUES (?,?)");
-    foreach my $file (@files) {
-      $callback->("$cur of $count")
-        if $callback and ref $callback and (
-          $cur == 0 or $cur == $count or $cur % 20 == 0
-        ); # don't flood
-      $sth->execute($file, -s $file);
-      $cur++;
-    }
-    $sth->finish;
 
-    return scalar @files || -1;
+    # Work in groups of 10 files to not hog db or spam messages
+    my $files_count = scalar @files;
+    my $cur = 1;
+    while (@files) {
+      my $group_count = (scalar @files > 10) ? 10 : scalar @files;
+      my @group = map { shift @files } 1 .. $group_count;
+
+      $callback->("analyzing $cur of $files_count");
+      my $sth = $dbh->prepare_cached("INSERT INTO $table (filename, size) VALUES (?,?)");
+      $sth->execute($_, -s $_) for @group;
+      $sth->finish; # hopefully unlock database
+
+      $cur += $group_count;
+    }
+
+    return $files_count || -1;
   }
 
   sub base_to_digest_method_name ($base) {
