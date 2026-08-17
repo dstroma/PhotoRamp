@@ -27,17 +27,14 @@
             function checkMessages(){
                 $.ajax({
                     url: '/get-messages/server-' + serverPid,
-                    timeout: checkInterval_ms*4,
+                    timeout: checkInterval_ms*2,
                     success: function(data, textStatus, jqXHR) {
                         checkMessagesRetries = 0;
 
-                        //console.log("Got data!");
-                        //console.log(data);
                         messages = messages.concat(data.messages);
 
                         var last_message = data.messages.pop();
                         if (last_message && last_message.user_message) {
-                            //lastReadMessage =
                             $('#user-message').html(last_message.user_message);
                         }
 
@@ -50,13 +47,12 @@
                         checkMessagesTimeout = setTimeout(checkMessages, checkInterval_ms);
                     },
                     error: function(){
-                        //clearInterval(checkMessagesInterval);
                         if (attemptedErrorRecovery && checkMessagesRetries >= checkMessagesRetriesMax) {
                             dmsDialog.pressCx();
                             $('h1').html("Error");
                             $('div#main-content').hide();
                             $('div#crash-notice').show();
-                        } else if (!attemptedErrorRecovery) {
+                        } else {
                             startErrorRecovery();
                         }
                     }
@@ -66,10 +62,10 @@
             function startErrorRecovery(){
                 dmsDialog.wait(["Program is busy or not responding.", "Retrying..."]);
                 setTimeout(function(){
-                    checkMessagesRetries = checkMessagesRetries + 1;
+                    checkMessagesRetries++;
                     attemptedErrorRecovery = true;
                     checkMessages();
-                }, checkInterval_ms*4);
+                }, checkMessagesTimeout*2);
             };
 
             $().ready(function(){

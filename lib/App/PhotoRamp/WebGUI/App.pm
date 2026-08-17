@@ -152,8 +152,6 @@ package App::PhotoRamp::WebGUI::App {
     if (defined $fork and $fork == 0) {
       $0 = 'PhotoRamp WebGUI Task Worker';
       warn "DEBUG: Forked task worker $$";
-      undef $request->{env};
-      undef $response->{env};
 
       # In Child Process
       my $message_printer = sub ($status, $message, @slurp) {
@@ -200,7 +198,6 @@ package App::PhotoRamp::WebGUI::App {
       exit 0;
     }
 
-    warn "DEBUG: $$ Rendering template\n";
     return $response->render_template('work.phtml');
   };
 

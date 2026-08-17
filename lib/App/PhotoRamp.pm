@@ -30,14 +30,19 @@ package App::PhotoRamp 0.01 {
   our $local_photos_dir     = get_user_pictures_dir();
   our $appdata_dir          = get_user_appdata_dir();
   my  $journal_file         = get_user_journal_filename();
-  my  $dbh;
-  my  $exifTool             = Image::ExifTool->new;
-  my  $temp_dir             = File::Temp->newdir();
+  our $temp_dir             = File::Temp->newdir();
+  our $db_file              = catfile($temp_dir, 'photoramp-work.db');
   my  $journal              = App::PhotoRamp::Journal->new_or_open($journal_file);
+  my  $exifTool             = Image::ExifTool->new;
 
   setup_db();
 
   #####################################################################
+
+  sub dbh {
+    state %handles = ();
+    return $handles{$$} //= DBI->connect("dbi:SQLite:dbname=$db_file",'','');
+  }
 
   sub media_file_extensions () {
     state @extensions;
@@ -125,20 +130,23 @@ package App::PhotoRamp 0.01 {
   sub get_last_char                   { substr($_[0], -1, 1) }
 
   sub setup_db {
-    return if $dbh;
+    state $setup_complete;
+    return if $setup_complete;
 
-    my $dbfile = catfile($temp_dir, 'photoramp-work.db');
-    warn "DEBUG: Database file will be located at $dbfile\n";
-    rename($dbfile => "$dbfile.old") if -e $dbfile;
-    $dbh = DBI->connect("dbi:SQLite:dbname=$dbfile",'','');
+    rename($db_file => "$db_file.old") if -e $db_file;
+
+    dbh();
+    warn "DEBUG: Database file is located at $db_file\n";
+
     setup_db_table_remote_photos();
     setup_db_table_local_photos();
     setup_db_table_ipc();
+    $setup_complete = 1;
   }
 
   sub setup_db_table_remote_photos {
-    $dbh->do('DROP TABLE IF EXISTS remote_photos');
-    $dbh->do('
+    dbh()->do('DROP TABLE IF EXISTS remote_photos');
+    dbh()->do('
       CREATE TABLE remote_photos (
         id          integer     PRIMARY KEY,
         filename    text        UNIQUE,
@@ -149,12 +157,12 @@ package App::PhotoRamp 0.01 {
         local_copy  text        DEFAULT NULL
       );
     ');
-    $dbh->do('CREATE INDEX remote_photos_size_index ON remote_photos (size)');
+    dbh()->do('CREATE INDEX remote_photos_size_index ON remote_photos (size)');
   }
 
   sub setup_db_table_local_photos {
-    $dbh->do('DROP TABLE IF EXISTS local_photos');
-    $dbh->do('
+    dbh()->do('DROP TABLE IF EXISTS local_photos');
+    dbh()->do('
       CREATE TABLE local_photos (
         id          integer     PRIMARY KEY,
         filename    text        UNIQUE,
@@ -163,11 +171,11 @@ package App::PhotoRamp 0.01 {
         md5_b64_spl text
       );
     ');
-    $dbh->do('CREATE INDEX local_photos_size_index ON local_photos (size)');
+    dbh()->do('CREATE INDEX local_photos_size_index ON local_photos (size)');
   }
 
   sub setup_db_table_ipc {
-    $dbh->do('
+    dbh()->do('
       -- Interprocess Communication
       CREATE TABLE ipc (
         id         integer PRIMARY KEY,
@@ -178,34 +186,46 @@ package App::PhotoRamp 0.01 {
   }
 
   sub get_ipc_messages ($user_last_read_id = 0) {
-    state $server_last_read_id = 0;
-    state $sth_select = $dbh->prepare('SELECT id, message FROM ipc WHERE id > ? ORDER BY id ASC')
+    my $dbh = dbh();
+
+    # Time out quickly.
+    my $to_orig = $dbh->sqlite_busy_timeout();
+    $dbh->sqlite_busy_timeout(500);
+
+    my $sth_select = $dbh->prepare_cached('SELECT id, message FROM ipc WHERE id > ? ORDER BY id ASC')
       or die $dbh->errstr;
-    state $sth_clean  = $dbh->prepare('DELETE FROM ipc WHERE id < ?')
+    my $sth_clean  = $dbh->prepare_cached('DELETE FROM ipc WHERE id < ?')
       or die $dbh->errstr;
+
+    #$dbh->sqlite_busy_timeout(500);
 
     $sth_select->execute($user_last_read_id // 0);
     my @messages;
     while (my ($new_id, $new_message) = $sth_select->fetchrow_array) {
-      $server_last_read_id = $new_id;
       $new_message = eval { decode_json($new_message) } // {};
       $new_message->{id} = $new_id;
       push @messages, $new_message;
     }
 
     # Random clean up
-    if (rand() < 0.1 and $server_last_read_id > 200) {
+    if (rand() < 0.1 and $user_last_read_id > 200) {
       eval {
-        $sth_clean->execute($server_last_read_id - 100) or die $sth_clean->errstr;
+        $sth_clean->execute($user_last_read_id - 100) or die $sth_clean->errstr;
       } or warn "DEBUG: Unable to clean up table ipc, $@";
     }
+
+    # Set timeout to original value
+    $dbh->sqlite_busy_timeout($to_orig);
+
     return @messages;
   }
 
   sub put_ipc_message ($message) {
-    state $sth_insert = $dbh->prepare('INSERT INTO ipc (process_id, message) VALUES (?,?)');
-    $message = encode_json($message) if ref $message;
-    return $sth_insert->execute($master_pid, $message);
+    my $dbh = dbh();
+    my $sth = $dbh->prepare_cached('INSERT INTO ipc (process_id, message) VALUES (?,?)');
+    my $ret = $sth->execute($master_pid, ref $message ? encode_json($message) : $message);
+    $sth->finish;
+    return $ret;
   }
 
   sub verify_files_identical ($file1, $file2) {
@@ -234,6 +254,7 @@ package App::PhotoRamp 0.01 {
   }
 
   sub index_files ($where, $callback = undef) {
+    my $dbh = dbh();
     my $dir;
     if ($where eq 'remote') {
       my @dcims = find_dcims() or die "No camera devices or media cards found.\n";
@@ -338,6 +359,7 @@ package App::PhotoRamp 0.01 {
   }
 
   sub duplicate_local_files {
+    my $dbh = dbh();
     index_files('local');
 
     my @common_sizes = ();
@@ -375,11 +397,13 @@ package App::PhotoRamp 0.01 {
   }
 
   sub remote_files_count {
+    my $dbh = dbh();
     my ($count) = $dbh->selectrow_array('SELECT COUNT(1) FROM remote_photos');
     return $count;
   }
 
   sub remote_files {
+    my $dbh = dbh();
     my $sth = $dbh->prepare('SELECT filename FROM remote_photos ORDER BY filename ASC');
     $sth->execute;
     my @files;
@@ -390,6 +414,7 @@ package App::PhotoRamp 0.01 {
   }
 
   sub remote_files_on_local {
+    my $dbh = dbh();
     my $sth = $dbh->prepare('
       SELECT rem.id, rem.filename, loc.id, loc.filename
       FROM remote_photos AS rem, local_photos AS loc
@@ -438,7 +463,8 @@ package App::PhotoRamp 0.01 {
   }
 
   sub verify_remote_file_has_local_copy ($remote_filename) {
-    state $sth = $dbh->prepare(
+    my $dbh = dbh();
+    my $sth = $dbh->prepare(
       'SELECT local_copy FROM remote_photos WHERE filename = ? AND on_local LIMIT 1'
     );
 
@@ -449,6 +475,8 @@ package App::PhotoRamp 0.01 {
   }
 
   sub remote_files_not_on_local {
+    my $dbh = dbh();
+
     # Search for non-duplicates
     # Best way to find non-duplicates is to first find duplicates
     remote_files_on_local();
