@@ -259,7 +259,7 @@ package App::PhotoRamp 0.01 {
     return 1;
   }
 
-  sub index_files ($where, $callback = sub { }) {
+  sub index_files ($where, $progress_callback = sub { }) {
     my $dbh = dbh();
     my $dir;
     if ($where eq 'remote') {
@@ -275,7 +275,6 @@ package App::PhotoRamp 0.01 {
     eval 'setup_db_table_'.$where.'_photos()';
 
     # Index files
-    $callback->('building file list');
     my $table = $where . '_photos';
     my @files = File::Find::Rule
       ->file
@@ -293,7 +292,7 @@ package App::PhotoRamp 0.01 {
       my $group_count = (scalar @files > $group_size) ? $group_size : scalar @files;
       my @group = map { shift @files } 1 .. $group_count;
 
-      $callback->("analyzing $cur of $files_count");
+      $progress_callback->("$cur of $files_count");
       my $sth = $dbh->prepare_cached("INSERT INTO $table (filename, size) VALUES (?,?)");
       $sth->execute($_, -s $_) for @group;
       $sth->finish; # hopefully unlock database

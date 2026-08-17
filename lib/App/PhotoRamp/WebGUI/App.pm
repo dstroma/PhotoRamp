@@ -156,10 +156,9 @@ package App::PhotoRamp::WebGUI::App {
         App::PhotoRamp::put_ipc_message({ status => $status, user_message => $message, @slurp });
       };
 
-      $message_printer->('WORKING', 'Scanning memory card'); sleep 1;
+      $message_printer->('WORKING', 'Scanning memory card...'); sleep 1;
       App::PhotoRamp::index_files('remote', sub {
         my $sub_message = shift || '';
-        $sub_message  = ", $sub_message" if length $sub_message;
         $sub_message .= '...';
         $message_printer->('WORKING', 'Scanning memory card ' . $sub_message);
       });
@@ -169,7 +168,7 @@ package App::PhotoRamp::WebGUI::App {
         exit;
       }
 
-      $message_printer->('WORKING', 'Scanning computer'); sleep 1;
+      $message_printer->('WORKING', 'Scanning computer...'); sleep 1;
       App::PhotoRamp::index_files('local',  sub {
         my $sub_message = shift || '';
         $sub_message .= '...';
