@@ -96,6 +96,7 @@ package App::PhotoRamp::WebGUI::App {
     return $response->next;
   };
 
+  route '/check-alive' => { text => 'OK' };
 
   # User routes
   route '/' => sub ($request, $response) {
@@ -107,17 +108,15 @@ package App::PhotoRamp::WebGUI::App {
   route '/get-messages/server-{server_pid}' => sub ($request, $response) {
     my $rpid = $request->route_param('server_pid');
     unless ($rpid eq $master_pid) {
-      $response->status(500);
-      $response->body("Error: Server master process ID is $master_pid, not $rpid!");
-      return $response;
+      return $response->render_json({ server_pid => $master_pid });
     }
 
     my $last_id;
-    if (my $cook = $request->cookies->{"last_sent_message_id-$master_pid"}) {
-      ($last_id) = $cook =~ m/^\D*(\d+)\D*$/;
+    if (my $cookie = $request->cookies->{"last_sent_message_id-$master_pid"}) {
+      ($last_id) = $cookie =~ m/^\D*(\d+)\D*$/;
     }
-    if (my $cook = $request->cookies->{"last_read_message_id-$master_pid"}) {
-      ($last_id) = $cook =~ m/^\D*(\d+)\D*$/;
+    if (my $cookie = $request->cookies->{"last_read_message_id-$master_pid"}) {
+      ($last_id) = $cookie =~ m/^\D*(\d+)\D*$/;
     }
 
     my @messages = App::PhotoRamp::get_ipc_messages($last_id ? $last_id : ());
@@ -127,12 +126,14 @@ package App::PhotoRamp::WebGUI::App {
       'max-age' => 60*60*24,
     } if @messages;
 
+    # Delete stale cookies
+    my @cookienames = keys $request->cookies->%*;
+    foreach my $name (@cookienames) {
+      next if $name =~ m/-$master_pid$/;
+      $response->cookies->{$name} = { value => '', 'max-age' => 0 };
+    }
+
     return $response->render_json({ messages => \@messages, server_pid => $master_pid });
-  };
-
-
-  route '/check-alive' => sub ($request, $response) {
-    return $response->render_text('OK');
   };
 
 
@@ -428,6 +429,7 @@ package App::PhotoRamp::WebGUI::App::Template {
   our $master_pid = $$;
   sub set_defaults ($self) {
     $self->set(
+      dcim_relative => sub ($name) { my ($rel) = $name =~ m`DCIM[\/](.+)$`; $rel },
       encode_u64    => \&App::PhotoRamp::Util::encode_u64,
       server_pid    => $master_pid,
       worker_pid    => sub { eval '$$' },

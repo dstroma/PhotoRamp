@@ -15,7 +15,8 @@
 		<div class="row">
 		[% END %]
 					<div class="box">
-						<div class="image">
+						<div class="image" style="position:relative">
+							<div style="position:absolute; top: 1px; left: 1px; font-size: 12px; color: white;text-align:left;">[% dcim_relative(file) %]</div>
 							[% IF file_is_image(file) %]
 							<a class="ajaxAction" href="/user-open/[% encode_u64(file) %]">
 								<img src="/user-file/[% encode_u64(file) %]">
@@ -68,7 +69,7 @@
 			if (toMove > 0)
 				message.push(toMove + ' files will be moved to computer');
 			if (toLose > 0)
-				message.push(toLose + ' files will be totally DELETED.')
+				message.push(toLose + ' files will be DELETED entirely.')
 
 			message.push('<b>Continue?</b>');
 

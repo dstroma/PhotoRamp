@@ -6,40 +6,45 @@
 
         <!-- (dmsDialog)  -->
         <script type="text/javascript" src="dmsDialog/js/dmsDialog.js"></script>
-        <link rel="stylesheet" href="dmsDialog/css/dmsDialog.css"></link>
+        <link rel="stylesheet" href="dmsDialog/css/dmsDialog.css"/>
 
         <!-- (favicon) -->
-        <link rel="icon" type="image/png" href="icons/favicon-64px.png">
+        <link rel="icon" type="image/png" href="icons/favicon-64px.png"/>
 
         <script type="text/javascript">
-            function goto (loc) {
-                window.location = loc;
-            }
+            function goto (loc) { window.location = loc; }
+            function curtime_s() { return (new Date).getTime()/1000; }
 
-            var checkInterval_ms        = [% check_interval OR '1000' %]
-            var serverPid               = '[% server_pid %]';
-            var messages                = [];
-            //var lastReadMessageId      = [% REQUEST.param('last_read_message_id') OR -1 %];
-            var checkMessagesTimeout    = setTimeout(checkMessages, checkInterval_ms);
-            var checkMessagesRetries    = 0;
-            var checkMessagesRetriesMax = 10;
+            var checkInterval_ms         = [% check_interval OR '1000' %]
+            var serverPid                = [% server_pid %];
+            var messages                 = [];
+            var checkMessagesTimeout     = setTimeout(checkMessages, checkInterval_ms);
+            var checkMessagesRetries     = 0;
+            var checkMessagesRetriesMax  = 16;
+            var checkMessagesLastOkTime  = curtime_s();
+            var checkMessagesMaxErrTime  = 30;
             var attemptedErrorRecovery  = false;
+
             function checkMessages(){
                 $.ajax({
                     url: '/get-messages/server-' + serverPid,
                     timeout: checkInterval_ms*5,
                     success: function(data, textStatus, jqXHR) {
-                        checkMessagesRetries = 0;
-                        if (attemptedErrorRecovery) {
+                        checkMessagesRetries    = 0;
+                        checkMessagesLastOkTime = curtime_s();
+
+                        if (attemptedErrorRecovery && data.server_pid == serverPid) {
                             attemptedErrorRecovery = false;
                             dmsDialog.pressCx();
                         }
 
-                        messages = messages.concat(data.messages);
+                        if (data.messages && data.messages.length > 0) {
+                            messages = messages.concat(data.messages);
 
-                        var last_message = data.messages.pop();
-                        if (last_message && last_message.user_message) {
-                            $('#user-message').html(last_message.user_message);
+                            var last_message = data.messages.pop();
+                            if (last_message && last_message.user_message) {
+                                $('#user-message').html(last_message.user_message);
+                            }
                         }
 
                         messages.forEach(function(element) {
@@ -48,10 +53,22 @@
                             }
                         });
 
-                        checkMessagesTimeout = setTimeout(checkMessages, checkInterval_ms);
+                        if (data.server_pid != serverPid) {
+                            dmsDialog.pressCx();
+                            $('h1').html("Application Restarted");
+                            $('div#main-content').hide();
+                            $('div#brash-notice').show();
+                        } else {
+                            checkMessagesTimeout = setTimeout(checkMessages, checkInterval_ms);
+                        }
                     },
                     error: function(){
-                        if (attemptedErrorRecovery && checkMessagesRetries >= checkMessagesRetriesMax) {
+                        if (attemptedErrorRecovery
+                            && checkMessagesRetries >= checkMessagesRetriesMax
+                            && (curtime_s() - checkMessagesLastOkTime) > checkMessagesMaxErrTime
+                        ) {
+                            console.log('Last message was received at ' + checkMessagesLastOkTime);
+                            console.log('The time is now ' + curtime_s() + ' -- giving up');
                             dmsDialog.pressCx();
                             $('h1').html("Error");
                             $('div#main-content').hide();
@@ -69,7 +86,7 @@
                 setTimeout(function(){
                     checkMessagesRetries++;
                     checkMessages();
-                }, checkMessagesTimeout*2);
+                }, checkMessagesTimeout*8);
             };
 
             $().ready(function(){
@@ -87,9 +104,7 @@
                 text-align: center;
             }
 
-            div#crash-notice {
-                display:none;
-            }
+            div#crash-notice, div#brash-notice { display:none; }
 
             div.main-nav button {
                 display: block;
@@ -177,6 +192,9 @@
         </div>
         <div id="crash-notice">
             <p>PhotoRamp has crashed! Please close the window and re-launch.</p>
+        </div>
+        <div id="brash-notice">
+            <p>A different instance of PhotoRamp has been started. Please close this window or tab.</p>
         </div>
         [% IF REQUEST.flash %]<script type="text/javascript">dmsDialog.alert("[% REQUEST.flash %]");</script>[% END %]
         [% IF error_dialog  %]<script type="text/javascript">dmsDialog.alert("[% error_dialog  %]");</script>[% END %]

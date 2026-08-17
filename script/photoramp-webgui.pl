@@ -51,7 +51,7 @@ sub launch {
       host    => '127.0.0.1',
       port    => 5678,
       keepalive_timeout => 1,
-      max_keepalive_requests => 10,
+      max_keepalive_requests => 100,
       max_workers => 4
     );
     $server->run(App::PhotoRamp::WebGUI::App->app);
@@ -65,7 +65,8 @@ sub launch {
   }
 
   # Launch browser
-  open_browser('http://localhost:5678');
+  open_browser("http://localhost:5678/")
+    unless grep { $_ =~ m/no[_-]open[_-]browser$/ } @ARGV;
 
   # Monitor
   { no warnings 'once';
