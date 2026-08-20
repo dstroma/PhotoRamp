@@ -1,15 +1,18 @@
 <!DOCTYPE html>
 <html>
     <head>
+        <!-- Main Style -->
+        <link rel="stylesheet" href="[% static_link('css/photoramp.css') %]"/>
+
         <!-- (jQuery) -->
-        <script type="text/javascript" src="jQuery/jquery-3.7.1.min.js"></script>
+        <script type="text/javascript" src="[% static_link('jQuery/jquery-3.7.1.min.js') %]"></script>
 
         <!-- (dmsDialog)  -->
-        <script type="text/javascript" src="dmsDialog/js/dmsDialog.js"></script>
-        <link rel="stylesheet" href="dmsDialog/css/dmsDialog.css"/>
+        <script type="text/javascript" src="[% static_link('dmsDialog/js/dmsDialog.js') %]"></script>
+        <link rel="stylesheet" href="[% static_link('dmsDialog/css/dmsDialog.css') %]"/>
 
         <!-- (favicon) -->
-        <link rel="icon" type="image/png" href="icons/favicon-64px.png"/>
+        <link rel="icon" type="image/png" href="[% static_link('icons/favicon-64px.png') %]"/>
 
         <script type="text/javascript">
             function goto (loc) { window.location = loc; }
@@ -96,107 +99,32 @@
                 });
             });
         </script>
-        <style type="text/css">
-            body {
-                background-color: #EEE;
-                font-family: Sans-Serif;
-                padding: 1em;
-                text-align: center;
-            }
 
-            div#crash-notice, div#brash-notice { display:none; }
-
-            div.main-nav button {
-                display: block;
-                padding: 0.5em 1em;
-                margin:  1em;
-                min-width: 30em;
-                font-size: 115%;
-                text-align: left;
-                margin-left: auto;
-                margin-right: auto;
-            }
-
-            div.main-nav button div.icon, div.main-nav button div.label {
-                display: inline;
-            }
-
-            div.main-nav button img {
-                padding-right: 1em;
-            }
-
-            hr.hr1 {
-                margin: 1em 5em;
-                border-top: 1px solid #333;
-                border-left: 0;
-                border-right: 0;
-                border-bottom: 0;
-            }
-
-            div.gallery {
-                text-align: center;
-                align-items: center;
-                margin-left: auto;
-                margin-right: auto;
-            }
-
-            div.gallery div.row {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-
-            div.gallery div.box {
-                xflex: 1;
-                border: 2px solid #222;
-                height: 256px;
-                width: 196px;
-                box-sizing: border-box;
-
-                display: flex;
-                flex-direction: column;
-
-                margin: 5px;
-                background: #222;
-            }
-
-            div.gallery div.image {
-                flex: 1;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-
-            div.gallery div.box img {
-                max-width: 192px;
-                max-height: 192px;
-            }
-
-            div.gallery div.box div.actions {
-                background: #BBB;
-                flex-shrink: 0;
-                width: 100%;
-            }
-
-            div.action-button {
-                margin: 2em;
-            }
-        </style>
         <title>[% title %]</title>
     </head>
     <body>
-        <h1 id="h1">[% h1 OR title %]</h1>
-        <div id="user-message"></div>
-        <div id="main-content">
-            [% content %]
+        <div id="top-header">
+            <div class="left">PhotoRamp</div>
+            <div class="right"><a
+                class="shutdown_link"
+                [% UNLESS show_shutdown_link %]style="display:none;" [% END %]
+                href="[% STASH.shutdown_url %]">Exit</a>
+            </div>
         </div>
-        <div id="crash-notice">
-            <p>PhotoRamp has crashed! Please close the window and re-launch.</p>
+        <div id="main">
+            <h1 id="h1">[% h1 OR title %]</h1>
+            <div id="user-message"></div>
+            <div id="main-content">
+                [% content %]
+            </div>
+            <div id="crash-notice">
+                <p>PhotoRamp has crashed! Please close the window and re-launch.</p>
+            </div>
+            <div id="brash-notice">
+                <p>A different instance of PhotoRamp has been started. Please close this window or tab.</p>
+            </div>
+            [% IF REQUEST.flash %]<script type="text/javascript">dmsDialog.alert("[% REQUEST.flash %]");</script>[% END %]
+            [% IF error_dialog  %]<script type="text/javascript">dmsDialog.alert("[% error_dialog  %]");</script>[% END %]
         </div>
-        <div id="brash-notice">
-            <p>A different instance of PhotoRamp has been started. Please close this window or tab.</p>
-        </div>
-        [% IF REQUEST.flash %]<script type="text/javascript">dmsDialog.alert("[% REQUEST.flash %]");</script>[% END %]
-        [% IF error_dialog  %]<script type="text/javascript">dmsDialog.alert("[% error_dialog  %]");</script>[% END %]
     </body>
 </html>

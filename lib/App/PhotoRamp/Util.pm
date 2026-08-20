@@ -13,23 +13,21 @@ package App::PhotoRamp::Util {
     decode_u64
     b64_to_u64
     u64_to_b64
-    catfile
     gzip_file
   );
   our %EXPORT_TAGS = ( all => \@EXPORT_OK );
-  ###
 
+  #
   # Base 64 functions
+  #
   sub encode_u64 ($str) { b64_to_u64(MIME::Base64::encode($str)) }
   sub decode_u64 ($str) { MIME::Base64::decode(u64_to_b64($str)) }
   sub b64_to_u64 ($str) { $str =~ tr`+/=\n`-_`dr }
   sub u64_to_b64 ($str) { $str =~ tr`-_`+/`r     }
 
-  # File utils
-  use File::Spec;
-  sub catfile  (@parts) { File::Spec->catfile(@parts) }
-
+  #
   # Gzip function
+  #
   sub gzip_file ($from, $to, :$buffer_size = 4*MiB, :$level = 6) {
     require Gzip::Libdeflate;
     my $gzip    = Gzip::Libdeflate->new(level => $level);

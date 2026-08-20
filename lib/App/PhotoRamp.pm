@@ -1,5 +1,4 @@
 use v5.26;
-use strict;
 use warnings;
 package App::PhotoRamp 0.01 {
   use App::PhotoRamp::Journal;
@@ -12,40 +11,100 @@ package App::PhotoRamp 0.01 {
   use Digest::MD5;
   use File::Copy ();
   use File::Find::Rule;
-  use File::Spec;  # for paths
+  use File::Spec::Functions qw(catfile catdir);  # for paths
   use File::stat;  # for oo-stat
   use File::Temp;  # for tempfiles
   use Image::ExifTool ();
   use JSON::MaybeXS;
+  use List::Util qw(uniq);
   use Fcntl ':seek';
   use autodie;
 
-  use constant WINDOWS_OS => (eval "use Win32; 1" ? 1 : 0);
+  use constant WINDOWS_OS => !! (eval "use Win32; 1" ? 1 : 0);
+  use constant MAC_OS     => !! ($^O =~ m/darwin/i);
+  use constant SLOW => 1;
 
-  our $APP_NAME             = 'PhotoRamp';
-  our $FILE_EXTENSION_REGEX = join '|', media_file_extensions();
-  our $master_pid           = $$;
-  our $username             = get_username();
-  our $remote_photos_dir;
-  our $local_photos_dir     = get_user_pictures_dir();
-  our $appdata_dir          = get_user_appdata_dir();
-  my  $journal_file         = get_user_journal_filename();
-  our $temp_dir             = File::Temp->newdir();
-  our $db_file              = catfile($temp_dir, 'photoramp-work.db');
-  my  $journal              = App::PhotoRamp::Journal->new_or_open($journal_file);
-  my  $exifTool             = Image::ExifTool->new;
-  our @children             = ();
+  our %PENV                 = get_penv();
+  our $APP_NAME             = $PENV{'APP_NAME'}          //= 'PhotoRamp';
+  our $server_pid           = $PENV{'SERVER_PID'}        //= $$;
+  our $username             = $PENV{'USERNAME'}          //= get_username();
+  our $remote_photos_dir    = $PENV{'REMOTE_PHOTOS_DIR'} //= undef;
+  our $local_photos_dir     = $PENV{'LOCAL_PHOTORS_DIR'} //= get_user_pictures_dir();
+  our $appdata_dir          = $PENV{'APPDATA_DIR'}       //= get_user_appdata_dir();
+  our $journal_filename     = $PENV{'JOURNAL_FILENAME'}  //= get_user_journal_filename();
+  our $temp_dir             = $PENV{'TEMP_DIR'}          //= File::Temp->newdir();
+  our $db_filename          = $PENV{'WORK_DB_FILENAME'}  //= catfile($temp_dir, 'photoramp-work.db');
+  our $db_needs_setup       = $$ == $server_pid;
+  our $journal              = App::PhotoRamp::Journal->new_or_open($journal_filename);
+  our $exifTool             = Image::ExifTool->new;
 
-  setup_db();
+  setup_db()
+    if $db_needs_setup and !$PENV{'WORK_DB_DONOTSETUP'};
 
   #####################################################################
+
+  sub get_penv { map { $_ =~ m/^PHOTORAMP_(.+)$/ ? ($1 => $ENV{$_}) : () } keys %ENV }
+
+  sub launch_task_worker (@tasks) {
+    my $tasks_ref = (@tasks == 1 and ref $tasks[0] eq 'ARRAY') ? $tasks[0] : \@tasks;
+    my $rn = join '', map { ['a'..'z']->[int(rand(26))] } 0..8;
+    my $fn = catfile($temp_dir, "$rn.env");
+    return launch_worker(@tasks)
+      if -e $fn;
+
+    # Make copy of PENV, Stringify (unbless) objects, manually set some fields
+    my %loc_PENV = %PENV;
+    $loc_PENV{$_} = defined $PENV{$_} ? "$PENV{$_}" : undef for keys %PENV;
+    $loc_PENV{'WORK_DB_DONOTSETUP'} = 1;
+    $loc_PENV{'REMOTE_PHOTOS_DIR'}  = $remote_photos_dir;
+
+    open my $fh, '>', $fn;
+    die "Cannot open $fn: $!" unless $fh;
+    print $fh encode_json({ PENV => \%loc_PENV, tasks => $tasks_ref });
+    close $fh;
+
+    if (WINDOWS_OS) {
+      my $system_rv = system(1, 'photoramp-worker.pl', $fn);
+      return $system_rv;
+    }
+
+    my $fork = fork();
+    die "Cannot fork!" unless defined $fork;
+
+    if ($fork == 0) {
+      my $system_rv;
+      $system_rv = system('photoramp-worker.pl', $fn);
+      exit $system_rv unless $system_rv == -1;
+
+      $system_rv = system('perl', '-I./lib', './script/photoramp-worker.pl', $fn);
+      exit $system_rv unless $system_rv == -1;
+
+      die "Cannot launch worker!" && exit -1;
+    }
+    return $fork;
+  }
+
+  sub do_tasks (@tasks) {
+    warn "DEBUG: PID $$ has entered sub do_tasks()\n";
+    warn "\t(task count: " . scalar(@tasks) . ")\n";
+    foreach my $task (@tasks) {
+      my $sub_name = $task->{'sub'};
+      my @args     = exists $task->{'args'} ? $task->{'args'}->@* : ();
+
+      # Do the task
+      my $sub = \&{__PACKAGE__ . '::' . $sub_name}
+        or die "$sub_name is not a sub in " . __PACKAGE__;
+      $sub->(@args);
+    }
+    warn "DEBUG: PID $$ has finished sub do_tasks()\n";
+  }
 
   sub dbh {
     state %handles = ();
     return $handles{$$} if $handles{$$};
 
-    my $dbh = DBI->connect("dbi:SQLite:dbname=$db_file",'','');
-    $dbh->do('PRAGMA journal_mode=WAL');
+    my $dbh = DBI->connect("dbi:SQLite:dbname=$db_filename",'','');
+    $dbh->do('PRAGMA journal_mode=WAL') unless keys %handles; # Only needs done once
 
     return $handles{$$} = $dbh;
   }
@@ -139,10 +198,10 @@ package App::PhotoRamp 0.01 {
     state $setup_complete;
     return if $setup_complete;
 
-    rename($db_file => "$db_file.old") if -e $db_file;
+    rename($db_filename => "$db_filename.old") if -e $db_filename;
 
     dbh();
-    warn "DEBUG: Database file is located at $db_file\n";
+    warn "DEBUG: Work db file located at $db_filename\n";
 
     setup_db_table_remote_photos();
     setup_db_table_local_photos();
@@ -230,7 +289,7 @@ package App::PhotoRamp 0.01 {
   sub put_ipc_message ($message) {
     my $dbh = dbh();
     my $sth = $dbh->prepare_cached('INSERT INTO ipc (process_id, message) VALUES (?,?)');
-    my $ret = $sth->execute($master_pid, ref $message ? encode_json($message) : $message);
+    my $ret = $sth->execute($server_pid, ref $message ? encode_json($message) : $message);
     $sth->finish;
     return $ret;
   }
@@ -261,12 +320,17 @@ package App::PhotoRamp 0.01 {
   }
 
   sub index_files ($where, $progress_callback = sub { }) {
+    state $FILE_EXTENSIONS = join '|', media_file_extensions();
     my $dbh = dbh();
     my $dir;
     if ($where eq 'remote') {
-      my @dcims = find_dcims() or die "No camera devices or media cards found.\n";
-      die 'Found multiple drives' unless @dcims == 1;
-      $dir = $dcims[0];
+      if ($remote_photos_dir) {
+        $dir = $remote_photos_dir;
+      } else {
+        my @dcims = find_dcims() or die "No camera devices or media cards found.\n";
+        die 'Found multiple drives' unless @dcims == 1;
+        $dir = $dcims[0];
+      }
     } elsif ($where eq 'local') {
       $dir = $local_photos_dir;
     } else {
@@ -280,20 +344,20 @@ package App::PhotoRamp 0.01 {
     my @files = File::Find::Rule
       ->file
       ->nonempty
-      ->name(qr/^[^\.].+\.($FILE_EXTENSION_REGEX)$/i)
+      ->name(qr/^[^\.].+\.($FILE_EXTENSIONS)$/i)
       ->in($dir);
 
     $dbh->do("DELETE FROM $table");
 
-    # Work in groups of 10 files to not hog db or spam messages
+    # Work in groups to not hog db or spam messages
     my $files_count = scalar @files;
-    my $group_size  = $files_count < 100 ? 10: 20;
+    my $group_size  = int($files_count / 10) || 1;
     my $cur = 1;
     while (@files) {
       my $group_count = (scalar @files > $group_size) ? $group_size : scalar @files;
       my @group = map { shift @files } 1 .. $group_count;
 
-      $progress_callback->("$cur of $files_count");
+      $progress_callback->(percent_done => int(100*$cur/$files_count));
       my $sth = $dbh->prepare_cached("INSERT INTO $table (filename, size) VALUES (?,?)");
       $sth->execute($_, -s $_) for @group;
       $sth->finish; # hopefully unlock database
@@ -302,6 +366,48 @@ package App::PhotoRamp 0.01 {
     }
 
     return $files_count || -1;
+  }
+
+  sub index_remote_and_local (:$dcim_path = undef, :$analyze = 1, :$status_updates = 1, :$done_args = []) {
+    $remote_photos_dir = $dcim_path if defined $dcim_path;
+
+    put_ipc_message({ status => 'WORKING', user_message => 'Scanning memory card (0%)...' })
+      if $status_updates;
+
+    index_files('remote', $status_updates ? (
+      sub (:$percent_done = 0) {
+        put_ipc_message({ status => 'WORKING', user_message => "Scanning memory card ($percent_done%)..." })
+      }) : ()
+    );
+
+    if (remote_files_count() == 0) {
+      put_ipc_message({ status => 'DONE', user_message => 'Nothing found on memory card.', @$done_args });
+      return;
+    }
+
+    put_ipc_message({ status => 'WORKING', user_message => 'Scanning computer (0%)...' })
+      if $status_updates;
+
+    index_files('local', $status_updates ? (
+      sub (:$percent_done = 0) {
+        put_ipc_message({ status => 'WORKING', user_message => "Scanning computer ($percent_done%)..." })
+      }) : ()
+    );
+
+    unless ($analyze) {
+      put_ipc_message({ status => 'DONE', @$done_args });
+      return;
+    }
+
+    put_ipc_message({ status => 'WORKING', user_message => 'Analyzing files...' })
+      if $status_updates;
+
+    my $data = { remote_files_not_on_local => [remote_files_not_on_local()] };
+
+    put_ipc_message({ status => 'DONE', @$done_args })
+      if $status_updates;
+
+    return;
   }
 
   sub base_to_digest_method_name ($base) {
@@ -477,7 +583,8 @@ package App::PhotoRamp 0.01 {
       return;
     }
 
-    return @duplicate_filenames;
+    # If a remote photo has more than 1 copy on local, the list will be wrong, so use List Util uniq
+    return uniq @duplicate_filenames;
   }
 
   sub verify_remote_file_has_local_copy ($remote_filename) {
@@ -518,6 +625,11 @@ package App::PhotoRamp 0.01 {
     unlink $filename or die "Cannot delete $filename: $!";
     $journal->set_action_status($log_id, success => 1);
     return 1;
+  }
+
+  sub delete_remote_file_if_have_copy ($filename, $reason = undef) {
+    return unless verify_remote_file_has_local_copy($filename);
+    return delete_file($filename);
   }
 
   sub import_file ($from, $to = undef) {

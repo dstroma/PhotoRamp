@@ -3,7 +3,7 @@ use warnings;
 use strict;
 use experimental 'signatures';
 
-package App::PhotoRamp::WebGUI::App {
+package App::PhotoRamp::WebGUI::App 0.01 {
   use PlackX::Framework qw(Template);
   use App::PhotoRamp::WebGUI::App::Template {INCLUDE_PATH => "$ENV{PHOTORAMP_BASEDIR}/template"};
   use App::PhotoRamp::WebGUI::App::Router;
@@ -11,6 +11,7 @@ package App::PhotoRamp::WebGUI::App {
   use App::PhotoRamp::Util qw(:all);
 
   use DateTime ();
+  use File::Spec::Functions qw(catfile catdir);
   use IO::File ();
   use MIME::Base64 ();
   use Plack::MIME ();
@@ -35,11 +36,11 @@ package App::PhotoRamp::WebGUI::App {
   rotate_logs();
 
   # Apply Middleware
-  require Plack::Middleware::Static;
+  use App::PhotoRamp::WebGUI::Plack::Middleware::Static;
   use Plack::Middleware::AccessLog;
   sub apply_middleware ($app) {
-    $app = Plack::Middleware::Static->wrap($app,
-      path => qr//,
+    $app = App::PhotoRamp::WebGUI::Plack::Middleware::Static->wrap($app,
+      path => sub { $_ =~ m`/static/$master_pid(/.+)$`; $_ = $1; return length $_ ? !!1 : !!0; },
       root => "$ENV{PHOTORAMP_BASEDIR}/static/",
       pass_through => 1
     );
@@ -90,6 +91,17 @@ package App::PhotoRamp::WebGUI::App {
 
   # Update activity time
   filter before => sub ($request, $response) {
+    # Add a convenience hash key to env
+    my $is_fast =
+    $response->stash->{'fast_server'} = !!1
+      if $request->{env}{'psgi.multiprocess'}
+      or $request->{env}{'psgi.multithread'}
+      or $request->{env}{'psgi.nonblocking'};
+    $response->stash->{'slow_server'} = !$is_fast;
+
+    # Template
+    $response->stash->{'shutdown_url'} = "/shutdown?server_pid=$master_pid";
+
     # Just in case the accesslog middleware doesn't work
     my $t = time;
     utime $t, $t, $server_logfile;
@@ -101,6 +113,7 @@ package App::PhotoRamp::WebGUI::App {
   # User routes
   route '/' => sub ($request, $response) {
     #$response->template->set(error_dialog => "Welcome");
+    $response->template->set(show_shutdown_link => 1);
     return $response->render_template('main.phtml');
   };
 
@@ -137,8 +150,9 @@ package App::PhotoRamp::WebGUI::App {
   };
 
 
-  route ['/{action:import|cleanup}'] => sub ($request, $response) {
-    my @dcims = App::PhotoRamp::find_dcims();
+  route { get => '/{action:import|cleanup}' } => sub ($request, $response) {
+    my $action = $request->route_param('action');
+    my @dcims  = App::PhotoRamp::find_dcims();
     if (@dcims > 1) {
       $response->flash('More than one digital camera memory card detected. Please unplug or eject excess devices.');
       return $response->redirect('/');
@@ -147,68 +161,27 @@ package App::PhotoRamp::WebGUI::App {
       return $response->redirect('/');
     }
 
-    my $last_message;
-    my $fork = fork;
-    if (defined $fork and $fork == 0) {
-      $0 = 'PhotoRamp WebGUI Task Worker';
-
-      # In Child Process
-      my $message_printer = sub ($status, $message, @slurp) {
-        App::PhotoRamp::put_ipc_message({ status => $status, user_message => $message, @slurp });
-      };
-
-      $message_printer->('WORKING', 'Scanning memory card...'); sleep 1;
-      App::PhotoRamp::index_files('remote', sub {
-        my $sub_message = shift || '';
-        $sub_message .= '...';
-        $message_printer->('WORKING', 'Scanning memory card ' . $sub_message);
-      });
-
-      if (App::PhotoRamp::remote_files_count() == 0) {
-        $message_printer->('DONE', 'Done. No remote files found.');
-        exit;
-      }
-
-      $message_printer->('WORKING', 'Scanning computer...'); sleep 1;
-      App::PhotoRamp::index_files('local',  sub {
-        my $sub_message = shift || '';
-        $sub_message .= '...';
-        $message_printer->('WORKING', 'Scanning computer ' . $sub_message);
-      });
-
-      $message_printer->('WORKING', 'Analyzing...');
-      my $data;
-      if (0) { #cleanup
-        $data = { remote_files_on_local => [App::PhotoRamp::remote_files_on_local()] };
-      } elsif (1) { #import
-        $data = { remote_files_not_on_local => [App::PhotoRamp::remote_files_not_on_local()] };
-      }
-      sleep 1;
-
-      # Done
-      my $goto_url = $request->route_param('action') eq 'import' ?
-        '/import-preview' :
-        '/cleanup-confirm' ;
-
-      $message_printer->('DONE', 'Done.', data => $data, goto_url => $goto_url);
-      exit 0;
-    }
-
+    App::PhotoRamp::launch_task_worker({
+      'sub'  => 'index_remote_and_local',
+      'args' => [
+        dcim_path => $dcims[0], analyze => 1, status_updates => 1, done_args => [ goto_url => "/$action-preview" ]
+      ]
+    });
     return $response->render_template('work.phtml');
   };
 
 
-  route { get => '/cleanup-confirm' } => sub ($request, $response) {
-    my $remote_files_count    = App::PhotoRamp::remote_files_count();
-    my @remote_files_on_local = App::PhotoRamp::remote_files_on_local();
+  route { get => '/{action:import|cleanup}-preview' } => sub ($request, $response) {
+    my $action = $request->route_param('action');
+    my $tmplt  = $response->template;
 
-    $response->template->set(
-      remote_files_count          => $remote_files_count,
-      remote_files_on_local       => \@remote_files_on_local,
-      remote_files_on_local_count => scalar @remote_files_on_local,
-    );
+    $tmplt->set(remote_files_count         => App::PhotoRamp::remote_files_count());
+    $tmplt->set(remote_files_not_on_local  => [App::PhotoRamp::remote_files_not_on_local()])
+      if $action eq 'import';
+    $tmplt->set(remote_files_on_local      => [App::PhotoRamp::remote_files_on_local()])
+      if $action eq 'cleanup';
 
-    return $response->render_template('cleanup-confirm.phtml');
+    return $response->render_template("${action}-preview.phtml");
   };
 
 
@@ -231,41 +204,22 @@ package App::PhotoRamp::WebGUI::App {
       $response->redirect('/');
     }
 
-    my $fork = fork;
-    if (defined $fork and $fork == 0) {
-      my $tasks_total    = $count_to_cleanup;
-      my $tasks_complete = 0;
-      my $tasks_pct_done;
-
-      App::PhotoRamp::put_ipc_message({ status => 'WORKING', user_message => "Processing (0%)..." });
-
-      # Do the work
-      foreach my $file (@cleanup_list) {
-        # Triple check we are okay to delete!
-        if (App::PhotoRamp::verify_remote_file_has_local_copy($file)) {
-          App::PhotoRamp::delete_file(filename => $file);
-        } else {
-          warn "ERROR!";
-        }
-      }
-
-      App::PhotoRamp::put_ipc_message({ status => 'DONE', goto_url => '/complete' });
+    my @tasks;
+    my $task_count = scalar @cleanup_list;
+    my $cur_task   = 0;
+    foreach my $file (@cleanup_list) {
+      my $pct = int(100*(++$cur_task)/$task_count);
+      push @tasks,
+        { 'sub' => 'delete_remote_file_if_have_copy', 'args' => [$file], },
+        { 'sub' => 'put_ipc_message', 'args' => [{ status => 'WORKING', user_message => "Processing ($pct%)" }] };
+    }
+    {
+      push @tasks,
+        { 'sub' => 'put_ipc_message', 'args' => [{ status => 'DONE', user_message => "Done", goto_url => '/complete' }] };
     }
 
+    App::PhotoRamp::launch_task_worker(@tasks);
     return $response->render_template('work.phtml');
-  };
-
-
-  route '/import-preview' => sub ($request, $response) {
-    my $remote_files_count        = App::PhotoRamp::remote_files_count();
-    my @remote_files_not_on_local = App::PhotoRamp::remote_files_not_on_local();
-
-    $response->template->set(
-      remote_files_count        => $remote_files_count,
-      remote_files_not_on_local => \@remote_files_not_on_local
-    );
-
-    return $response->render_template('import-preview.phtml');
   };
 
 
@@ -285,26 +239,28 @@ package App::PhotoRamp::WebGUI::App {
       }
     }
 
-    my $fork = fork();
-    if (defined $fork and $fork == 0) {
-      my $tasks = scalar @import_list + scalar @delete_list;
-      my $prog  = 0;
-      foreach my $file (@import_list) {
-        my $pct = int($prog/$tasks * 100);
-        App::PhotoRamp::import_file($file);
-        App::PhotoRamp::put_ipc_message({ status => 'WORKING', user_message => "Processing ($pct%)..." });
-        $prog++;
-      }
-      foreach my $file (@delete_list) {
-        my $pct = int($prog/$tasks * 100);
-        App::PhotoRamp::delete_file($file);
-        App::PhotoRamp::put_ipc_message({ status => 'WORKING', user_message => "Processing ($pct%)..." });
-        $prog++;
-      }
-      App::PhotoRamp::put_ipc_message({ status => 'DONE', user_message => "Processing (100%)...", goto_url => '/complete' });
-      exit;
+    my $task_count = scalar @import_list + scalar @delete_list;
+    my $cur_task   = 0;
+    my @tasks;
+
+    foreach my $file (@import_list) {
+      my $pct = int(100*(++$cur_task)/$task_count);
+      push @tasks, (
+        { 'sub' => 'import_file', 'args' => [$file], },
+        { 'sub' => 'put_ipc_message', 'args' => [{ status => 'WORKING', user_message => "Processing ($pct%)" }] }
+      );
+    }
+    foreach my $file (@delete_list) {
+      my $pct = int(100*(++$cur_task)/$task_count);
+      push @tasks, (
+        { 'sub' => 'delete_file', 'args' => [$file], },
+        { 'sub' => 'put_ipc_message', 'args' => [{ status => 'WORKING', user_message => "Processing ($pct%)" }] }
+      );
     }
 
+    push @tasks,{ 'sub' => 'put_ipc_message', 'args' => [{ status => 'DONE', goto_url => '/complete' }] };
+
+    App::PhotoRamp::launch_task_worker(\@tasks);
     return $response->render_template('work.phtml');
   };
 
@@ -400,12 +356,42 @@ package App::PhotoRamp::WebGUI::App {
   };
 
 
+  route '/shutdown' => sub ($request, $response) {
+    my $param_pid = $request->param('server_pid');
+    unless ($param_pid and $param_pid == $master_pid) {
+      $response->status(403);
+      return $response->render_text('Not Authorized');
+    }
+
+    # Close the user's browser
+    if (open my $fh, '<', catfile($App::PhotoRamp::appdata_dir, 'webgui-browser.pid')) {
+      my $browser_pid = <$fh>;
+      chomp $browser_pid;
+      kill 'TERM', $browser_pid;
+    }
+
+    # Tell server to stop
+    if ($request->env->{'psgix.harakiri'}) {
+      $request->env->{'psgix.harakiri.commit'} = 1;
+    }
+
+    if ($request->env->{'psgi.multiprocess'}) {
+      kill 'TERM', $master_pid;
+    }
+
+    $response->render_html(
+      '<html><body style="text-align: center; font-family: Sans-Serif;">' .
+      '<h1>Application Ended</h1><p>You may close this window.</p>' .
+      '</body></html>'
+    );
+  };
+
   route '/user-file/:u64_filename' => sub ($request, $response) {
     my $filename  = decode_u64($request->route_param('u64_filename'));
     my $mime_type = App::PhotoRamp::file_mime_type($filename);
 
     $response->content_type($mime_type);
-    $response->body(IO::File->new($filename, '<'));
+    $response->body(IO::File->new($filename, '<:raw'));
     return $response;
   };
 
@@ -413,7 +399,13 @@ package App::PhotoRamp::WebGUI::App {
   route '/user-open/:u64_filename' => sub ($request, $response) {
     my $filename  = decode_u64($request->route_param('u64_filename'));
 
-    if (fork() == 0) { `open "$filename"`; exit; }
+    if (App::PhotoRamp::WINDOWS_OS) {
+      system(1, 'start', '', $filename);
+    } elsif ($^O =~ m/darwin/) {
+      system('open', $filename);
+    } else {
+      system('xdg-open', $filename);
+    }
 
     return $response->render_text('OK');
   };
@@ -421,7 +413,7 @@ package App::PhotoRamp::WebGUI::App {
 
   route '/debug' => sub ($request, $response) {
     require Data::Dumper;
-    return $response->render_text(Data::Dumper::Dumper($request));
+    return $response->render_text(Data::Dumper::Dumper({ request => $request, response => $response }));
   };
 }
 
@@ -436,6 +428,10 @@ package App::PhotoRamp::WebGUI::App::Template {
       file_is_image => \&App::PhotoRamp::file_is_image,
       file_is_video => \&App::PhotoRamp::file_is_video,
       file_is_audio => \&App::PhotoRamp::file_is_audio,
+      static_link   => sub ($link) {
+        $link = substr($link, 1) if substr($link, 0, 1) eq '/';
+        return "/static/$master_pid/$link"
+      },
     );
     $self;
   }

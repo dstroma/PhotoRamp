@@ -1,5 +1,4 @@
 use v5.26;
-use strict;
 use warnings;
 package App::PhotoRamp::Journal {
   use App::PhotoRamp::Signatures;
@@ -40,12 +39,17 @@ package App::PhotoRamp::Journal {
       unless $dbh;
 
     $self->{dbh} = $dbh;
+    $self->{pid} = $$;
     $self->setup_db unless $exist;
 
     return $self;
   }
 
-  sub dbh ($self) { $self->{dbh} }
+  sub dbh ($self) {
+    warn "Attempt to access DBI object meant for $self->{pid} by pid $$"
+      if $self->{pid} != $$;
+    return $self->{dbh};
+  }
 
   sub setup_db ($self) {
     $self->dbh->do(q{

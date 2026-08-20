@@ -7,6 +7,12 @@
 		[% IF remote_files_on_local.size > 0 %]These [% remote_files_on_local.size %] can be safely removed from the memory card.[% END %]
 	</p>
 
+	[% IF 1 %]
+	[% FOREACH file IN remote_files_on_local %]
+	[% file %]
+	[% END %]
+	[% END %]
+
 	[% UNLESS remote_files_on_local.size == 0 %]
 	<form action="/cleanup-submit" method="post">
 		<input type="hidden" name="count_to_cleanup" value="[% remote_files_on_local.size %]">
@@ -21,7 +27,9 @@
 	</form>
 
 	<hr class="hr1">
-	<button onclick="goto('/')">&lt; Main Menu</button>
+	<div class="action-button">
+		<button onclick="goto('/')">&lt; Main Menu</button>
+	</div>
 </div>
 
 [% END %]

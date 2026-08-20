@@ -1,0 +1,146 @@
+body {
+background-color: #DDD;
+font-family: Sans-Serif;
+padding: 0;
+margin: 0;
+text-align: center;
+}
+
+/* Nav Header */
+div#top-header {
+background: #2a599b;
+background: linear-gradient(90deg,rgba(42, 89, 155, 1) 0%, rgba(87, 199, 133, 1) 50%, rgba(237, 221, 83, 1) 100%);
+font-size: 0.9em;
+padding: 1em;
+border-bottom: 1px solid #333;
+}
+
+div#top-header div.left {
+color: #EEE;
+display: inline-block;
+width: 49%;
+text-align: left;
+}
+
+div#top-header div.right {
+color: #111;
+display: inline-block;
+width: 49%;
+text-align: right;
+}
+
+div#top-header a {
+text-decoration: none;
+color: #111;
+border: 1px solid #111;
+border-radius: 2px;
+padding: 0.25em 1.25em;
+background-color: #EEA;
+}
+
+div#top-header a:hover,
+div#top-header a:active {
+color: white;
+border-color: white;
+background-color: #B00;
+}
+
+/* Main */
+div#main {
+padding: 1em;
+}
+
+div#crash-notice, div#brash-notice { display:none; }
+
+div.main-nav button {
+display: block;
+padding: 0.5em 1em;
+margin:  1em;
+min-width: 30em;
+font-size: 115%;
+text-align: left;
+margin-left: auto;
+margin-right: auto;
+}
+
+div.main-nav button div.icon, div.main-nav button div.label {
+display: inline;
+}
+
+div.main-nav button img {
+padding-right: 1em;
+}
+
+hr.hr1 {
+margin: 1em 5em;
+border-top: 1px solid #333;
+border-left: 0;
+border-right: 0;
+border-bottom: 0;
+}
+
+p.note {
+font-style: italic;
+font-size: 90%;
+}
+
+div.gallery {
+text-align: center;
+align-items: center;
+margin-left: auto;
+margin-right: auto;
+}
+
+div.gallery div.row {
+display: flex;
+align-items: center;
+justify-content: center;
+}
+
+div.gallery div.box {
+xflex: 1;
+border: 2px solid #222;
+height: 256px;
+width: 196px;
+box-sizing: border-box;
+
+display: flex;
+flex-direction: column;
+
+margin: 5px;
+background: #222;
+}
+
+div.gallery div.box.will_be_lost {
+border-color: #A00;
+background-color: #A00;
+}
+div.gallery div.box.will_be_lost img {
+opacity: 50%;
+}
+
+div.gallery div.image {
+flex: 1;
+display: flex;
+align-items: center;
+justify-content: center;
+}
+
+div.gallery div.box img {
+max-width: 192px;
+max-height: 192px;
+}
+
+div.gallery div.box div.actions {
+background: #BBB;
+flex-shrink: 0;
+width: 100%;
+}
+
+div.action-button {
+margin: 2em;
+}
+
+div.action-button button, div.action-button input[type=submit] {
+padding: 0.5em;
+}

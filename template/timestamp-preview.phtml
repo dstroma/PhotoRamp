@@ -59,10 +59,10 @@
 
 							if (gotData.delta) {
 								if (gotData.delta > 0) {
-									dmsDialog.alert(["New timestamps have been entered with a backward shift relative to their previous timestamps.",
+									dmsDialog.alert(["New timestamps have been entered with a forward shift relative to their previous timestamps.",
 													"Please check the results and make manual adjustments if necessary."]); // by approximately " + gotData.delta_human.summary + ". (Leap year math may affect this summary.)");
 								} else if (gotData.delta < 0) {
-									dmsDialog.alert(["New timestamps have been entered with a forward shift relative to their previous timestamps.",
+									dmsDialog.alert(["New timestamps have been entered with a backward shift relative to their previous timestamps.",
 													"Please check the results and make manual adjustments if necessary."]); // by approximately " + gotData.delta_human.summary+ ". (Leap year math may affect this summary.)");
 								}
 							}
@@ -193,9 +193,9 @@
 						<input type="time" id="input-time-[% loop.index %]" name="time-[% encode_u64('file.filename') %]">
 					</div>
 					<div class="buttons">
-						<button class="set-allbelow" data-file-idx="[% loop.index %]">SET all Below</button>
-						<button class="adj-allbelow" data-file-idx="[% loop.index %]">SHIFT all Below</button>
-						<button class="uns-allbelow" data-file-idx="[% loop.index %]">UNset all Below</button>
+						<button type="button" class="set-allbelow" data-file-idx="[% loop.index %]">SET all Below</button>
+						<button type="button" class="adj-allbelow" data-file-idx="[% loop.index %]">SHIFT all Below</button>
+						<button type="button" class="uns-allbelow" data-file-idx="[% loop.index %]">UNset all Below</button>
 					</div>
 				</div>
 			</div>
@@ -222,7 +222,9 @@
 	[% END # UNLESS %]
 
 	<hr class="hr1">
-	<button onclick="goto('/')">&lt; Main Menu</button>
+	<div class="action-button">
+		<button onclick="goto('/')">&lt; Main Menu</button>
+	</div>
 </div>
 
 [% END %]
